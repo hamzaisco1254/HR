@@ -1,0 +1,7 @@
+PyQt6==6.7.0
+python-docx==0.8.11
+pandas==2.2.0
+openpyxl==3.11.0
+pillow==10.1.0
+requests==2.31.0
+pyinstaller==6.3.0

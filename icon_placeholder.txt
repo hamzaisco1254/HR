@@ -1,0 +1,6 @@
+# Icon placeholder - Replace with actual icon.ico file
+# To create an icon:
+# 1. Create a 256x256 PNG image
+# 2. Convert to ICO format using online tools or software like GIMP
+# 3. Save as 'icon.ico' in the project root
+# 4. The build script will automatically include it

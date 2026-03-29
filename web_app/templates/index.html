@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Accueil - Générateur de Documents RH{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="card-title mb-0">
+                    <i class="fas fa-home me-2"></i>
+                    Générateur de Documents RH
+                </h4>
+            </div>
+            <div class="card-body">
+                <p class="lead text-center mb-4">
+                    Bienvenue dans l'application web de génération de documents RH.
+                    Générez facilement des attestations de travail et des ordres de mission.
+                </p>
+
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <div class="card h-100 border-primary">
+                            <div class="card-body text-center">
+                                <i class="fas fa-user-check fa-3x text-primary mb-3"></i>
+                                <h5 class="card-title">Attestation de Travail</h5>
+                                <p class="card-text">
+                                    Générez des attestations de travail pour vos employés
+                                    avec toutes les informations nécessaires.
+                                </p>
+                                <a href="{{ url_for('attestation') }}" class="btn btn-primary">
+                                    <i class="fas fa-plus me-2"></i>Créer Attestation
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="card h-100 border-success">
+                            <div class="card-body text-center">
+                                <i class="fas fa-plane fa-3x text-success mb-3"></i>
+                                <h5 class="card-title">Ordre de Mission</h5>
+                                <p class="card-text">
+                                    Créez des ordres de mission pour les déplacements
+                                    professionnels de vos employés.
+                                </p>
+                                <a href="{{ url_for('ordre_mission') }}" class="btn btn-success">
+                                    <i class="fas fa-plus me-2"></i>Créer Ordre de Mission
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-upload me-2"></i>Fonctionnalités d'import</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="fas fa-check text-success me-2"></i>Import Excel local</li>
+                            <li><i class="fas fa-check text-success me-2"></i>URLs Google Drive</li>
+                            <li><i class="fas fa-check text-success me-2"></i>URLs Dropbox</li>
+                            <li><i class="fas fa-check text-success me-2"></i>URLs OneDrive/SharePoint</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Google Sheets</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-cog me-2"></i>Configuration</h6>
+                        <ul class="list-unstyled">
+                            <li><i class="fas fa-check text-success me-2"></i>Références automatiques</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Configuration société</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Templates personnalisés</li>
+                            <li><i class="fas fa-check text-success me-2"></i>Téléchargement direct</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
