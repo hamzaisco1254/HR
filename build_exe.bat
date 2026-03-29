@@ -1,0 +1,1 @@
+pyinstaller --onefile --windowed --name="HR_Document_Generator" --icon="icon.ico" main.py
