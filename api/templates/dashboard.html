@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Invoice Intelligence & Financial Dashboard — PLW Tunisia</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#162142;}
+
+/* ── Top bar ─────────────────────────────────────── */
+.topbar{background:#162142;color:#fff;display:flex;align-items:center;
+  padding:10px 24px;gap:16px;position:sticky;top:0;z-index:100;}
+.topbar img{height:36px;border-radius:4px;}
+.topbar h1{font-size:17px;font-weight:700;flex:1;}
+.topbar a{color:#fff;text-decoration:none;font-size:13px;padding:6px 14px;
+  border:1px solid rgba(255,255,255,.3);border-radius:4px;font-weight:600;}
+.topbar a:hover{background:rgba(255,255,255,.12);}
+
+/* ── Sidebar + Main grid ─────────────────────────── */
+.app-shell{display:flex;min-height:calc(100vh - 56px);}
+.sidebar{width:220px;background:#fff;border-right:1px solid #e0e0e0;
+  padding:20px 0;flex-shrink:0;}
+.sidebar a{display:flex;align-items:center;gap:10px;padding:10px 20px;
+  color:#162142;text-decoration:none;font-size:13px;font-weight:600;
+  border-left:3px solid transparent;transition:.15s;}
+.sidebar a:hover{background:#f8f0f5;border-left-color:#D61E8B;}
+.sidebar a.active{background:#f8f0f5;border-left-color:#D61E8B;color:#D61E8B;}
+.sidebar .sep{height:1px;background:#e8e8e8;margin:12px 20px;}
+.main{flex:1;padding:24px;overflow-y:auto;max-height:calc(100vh - 56px);}
+
+/* ── Section pages ───────────────────────────────── */
+.page{display:none;}
+.page.active{display:block;}
+
+/* ── Cards ───────────────────────────────────────── */
+.card{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.08);
+  padding:20px;margin-bottom:20px;}
+.card h3{font-size:15px;color:#162142;margin-bottom:14px;padding-bottom:8px;
+  border-bottom:2px solid #D61E8B;}
+
+/* ── Stat cards row ──────────────────────────────── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:20px;}
+.stat-card{background:#fff;border-radius:8px;padding:16px;
+  box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid #D61E8B;}
+.stat-card .label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;}
+.stat-card .value{font-size:22px;font-weight:700;color:#162142;margin:4px 0;}
+.stat-card .sub{font-size:12px;color:#888;}
+.stat-card.green{border-left-color:#198754;}
+.stat-card.red{border-left-color:#dc3545;}
+.stat-card.blue{border-left-color:#0d6efd;}
+
+/* ── Forms ───────────────────────────────────────── */
+label{display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:3px;}
+.input,.select{width:100%;padding:8px 10px;border:1px solid #d0d0d0;border-radius:5px;
+  font-size:13px;color:#162142;}
+.input:focus,.select:focus{border-color:#D61E8B;outline:none;box-shadow:0 0 0 2px rgba(214,30,139,.15);}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 16px;}
+
+/* ── Buttons ─────────────────────────────────────── */
+.btn{padding:8px 18px;border:none;border-radius:5px;font-weight:700;
+  font-size:13px;cursor:pointer;transition:.15s;}
+.btn-pink{background:#D61E8B;color:#fff;}.btn-pink:hover{background:#b81970;}
+.btn-dark{background:#162142;color:#fff;}.btn-dark:hover{background:#0d1628;}
+.btn-danger{background:#dc3545;color:#fff;}.btn-danger:hover{background:#c82333;}
+.btn-outline{background:transparent;color:#162142;border:1px solid #d0d0d0;}
+.btn-outline:hover{background:#f5f5f5;}
+.btn-sm{padding:5px 12px;font-size:12px;}
+
+/* ── Table ───────────────────────────────────────── */
+.tbl{width:100%;border-collapse:collapse;font-size:13px;}
+.tbl th{background:#162142;color:#fff;padding:9px 10px;text-align:left;font-weight:600;}
+.tbl td{padding:8px 10px;border-bottom:1px solid #eee;}
+.tbl tr:hover td{background:#fdf5fa;}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;}
+.badge-paid{background:#d4edda;color:#155724;}
+.badge-unpaid{background:#fff3cd;color:#856404;}
+.badge-overdue{background:#f8d7da;color:#721c24;}
+.badge-uncertain{background:#d1ecf1;color:#0c5460;}
+
+/* ── Confidence bar ──────────────────────────────── */
+.conf-bar{height:6px;background:#e8e8e8;border-radius:3px;overflow:hidden;width:80px;display:inline-block;vertical-align:middle;}
+.conf-fill{height:100%;border-radius:3px;}
+.conf-high{background:#198754;}
+.conf-med{background:#ffc107;}
+.conf-low{background:#dc3545;}
+
+/* ── Upload zone ─────────────────────────────────── */
+.upload-zone{border:2px dashed #D61E8B;border-radius:10px;padding:40px 20px;
+  text-align:center;cursor:pointer;transition:.2s;background:#fdf5fa;}
+.upload-zone:hover,.upload-zone.dragover{background:#f8e8f2;border-color:#b81970;}
+.upload-zone p{color:#888;margin-top:8px;font-size:13px;}
+.upload-zone .icon{font-size:36px;color:#D61E8B;}
+
+/* ── KPI cards ───────────────────────────────────── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;}
+.kpi-card{background:#fff;border-radius:8px;padding:16px 18px;
+  box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:3px solid #162142;}
+.kpi-card .kpi-name{font-size:13px;font-weight:700;color:#162142;}
+.kpi-card .kpi-val{font-size:24px;font-weight:800;margin:6px 0;}
+.kpi-card .kpi-desc{font-size:11px;color:#888;line-height:1.4;}
+.kpi-card .kpi-val.positive{color:#198754;}
+.kpi-card .kpi-val.negative{color:#dc3545;}
+.kpi-card .kpi-val.neutral{color:#162142;}
+
+/* ── Chart containers ────────────────────────────── */
+.chart-row{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;}
+.chart-box{background:#fff;border-radius:8px;padding:16px;
+  box-shadow:0 1px 4px rgba(0,0,0,.08);}
+.chart-box h4{font-size:13px;font-weight:700;color:#162142;margin-bottom:10px;}
+@media(max-width:900px){.chart-row{grid-template-columns:1fr;}}
+
+/* ── Progress spinner ────────────────────────────── */
+.spinner{display:inline-block;width:20px;height:20px;border:3px solid #e8e8e8;
+  border-top-color:#D61E8B;border-radius:50%;animation:spin .6s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.processing{display:flex;align-items:center;gap:10px;padding:16px;
+  background:#fff9fc;border:1px solid #D61E8B;border-radius:8px;margin:16px 0;}
+
+/* ── AI insight box ──────────────────────────────── */
+.insight-box{background:linear-gradient(135deg,#162142,#2a3a6a);color:#fff;
+  border-radius:8px;padding:18px 20px;margin-bottom:20px;line-height:1.6;font-size:14px;}
+.insight-box .tag{display:inline-block;background:#D61E8B;padding:2px 10px;
+  border-radius:4px;font-size:11px;font-weight:700;margin-bottom:8px;}
+
+/* ── Toast ───────────────────────────────────────── */
+#toast{position:fixed;top:20px;right:20px;z-index:9999;max-width:380px;
+  padding:12px 18px;border-radius:6px;font-weight:700;font-size:14px;
+  display:none;box-shadow:0 4px 12px rgba(0,0,0,.2);}
+#toast.success{background:#d4edda;color:#155724;border:1px solid #c3e6cb;}
+#toast.error{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb;}
+#toast.info{background:#d1ecf1;color:#0c5460;border:1px solid #bee5eb;}
+
+/* ── Responsive ──────────────────────────────────── */
+@media(max-width:768px){
+  .sidebar{display:none;}
+  .topbar{flex-wrap:wrap;}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════ TOP BAR ═══════ -->
+<div class="topbar">
+  <img src="/static/logo.png" alt="Logo" onerror="this.style.display='none'">
+  <h1>Invoice Intelligence &amp; Financial Dashboard</h1>
+  <a href="/attestation">&#8592; Documents RH</a>
+</div>
+
+<!-- ═══════ APP SHELL ═══════ -->
+<div class="app-shell">
+
+<!-- Sidebar nav -->
+<nav class="sidebar">
+  <a href="#" class="active" data-page="overview" onclick="showPage('overview',this)">&#128202; Vue d'ensemble</a>
+  <a href="#" data-page="upload" onclick="showPage('upload',this)">&#128228; Upload Facture</a>
+  <a href="#" data-page="invoices" onclick="showPage('invoices',this)">&#128196; Factures</a>
+  <div class="sep"></div>
+  <a href="#" data-page="finances" onclick="showPage('finances',this)">&#127974; Finances</a>
+  <a href="#" data-page="kpis" onclick="showPage('kpis',this)">&#128200; KPIs</a>
+  <a href="#" data-page="settings" onclick="showPage('settings',this)">&#9881; Paramètres</a>
+</nav>
+
+<div class="main">
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- PAGE: OVERVIEW                                              -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="page active" id="pg-overview">
+
+  <!-- AI Insight -->
+  <div class="insight-box" id="ai-insight" style="display:none;">
+    <div class="tag">&#129302; Analyse IA</div>
+    <div id="ai-insight-text"></div>
+  </div>
+
+  <!-- Top stats -->
+  <div class="stats-grid" id="top-stats"></div>
+
+  <!-- Charts -->
+  <div class="chart-row">
+    <div class="chart-box">
+      <h4>Cash Flow — 12 derniers mois</h4>
+      <canvas id="chart-cashflow" height="220"></canvas>
+    </div>
+    <div class="chart-box">
+      <h4>Statut des Factures</h4>
+      <canvas id="chart-status" height="220"></canvas>
+    </div>
+  </div>
+  <div class="chart-row">
+    <div class="chart-box">
+      <h4>Dépenses par Fournisseur</h4>
+      <canvas id="chart-suppliers" height="220"></canvas>
+    </div>
+    <div class="chart-box">
+      <h4>Répartition par Devise</h4>
+      <canvas id="chart-currency" height="220"></canvas>
+    </div>
+  </div>
+
+  <!-- Overdue alerts -->
+  <div class="card" id="alerts-card" style="display:none;">
+    <h3>&#9888;&#65039; Alertes — Factures en Retard</h3>
+    <div id="alerts-list"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- PAGE: UPLOAD                                                -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="page" id="pg-upload">
+  <div class="card">
+    <h3>&#128228; Importer une Facture (PDF / Image)</h3>
+    <div class="upload-zone" id="drop-zone" onclick="document.getElementById('inv-file').click()">
+      <div class="icon">&#128196;</div>
+      <p>Glissez-déposez un fichier ici ou cliquez pour parcourir</p>
+      <p style="font-size:11px;color:#aaa;">PDF, PNG, JPG — max 10 Mo</p>
+      <input type="file" id="inv-file" accept=".pdf,.png,.jpg,.jpeg,.webp" style="display:none"
+             onchange="onFileSelected(this)">
+    </div>
+    <div class="processing" id="proc-status" style="display:none;">
+      <div class="spinner"></div>
+      <span id="proc-text">Analyse en cours…</span>
+    </div>
+  </div>
+
+  <!-- Extraction result (hidden until processed) -->
+  <div class="card" id="extract-card" style="display:none;">
+    <h3>&#9989; Résultat de l'Extraction</h3>
+    <p id="ai-warning" style="color:#856404;font-size:12px;margin-bottom:10px;display:none;"></p>
+    <div class="grid2">
+      <div><label>Fournisseur</label><input class="input" id="ex-supplier"><span class="conf-bar" id="cb-supplier"></span></div>
+      <div><label>N° Facture</label><input class="input" id="ex-ref"><span class="conf-bar" id="cb-ref"></span></div>
+      <div><label>Date Facture</label><input type="date" class="input" id="ex-date"><span class="conf-bar" id="cb-date"></span></div>
+      <div><label>Date Échéance</label><input type="date" class="input" id="ex-due"></div>
+      <div><label>Montant</label><input type="number" step="0.01" class="input" id="ex-amount"><span class="conf-bar" id="cb-amount"></span></div>
+      <div><label>Devise</label>
+        <select class="select" id="ex-currency">
+          <option value="TND">TND</option><option value="EUR">EUR</option><option value="USD">USD</option>
+        </select><span class="conf-bar" id="cb-currency"></span>
+      </div>
+      <div><label>Statut Paiement</label>
+        <select class="select" id="ex-status">
+          <option value="unpaid">Impayée</option><option value="paid">Payée</option>
+          <option value="overdue">En retard</option><option value="uncertain">Incertain</option>
+        </select><span class="conf-bar" id="cb-status"></span>
+      </div>
+      <div><label>Notes</label><input class="input" id="ex-notes"></div>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;">
+      <button class="btn btn-pink" onclick="saveExtractedInvoice()">&#128190; Enregistrer la Facture</button>
+      <button class="btn btn-outline" onclick="resetUpload()">Annuler</button>
+    </div>
+  </div>
+
+  <!-- Manual entry -->
+  <div class="card">
+    <h3>&#9997;&#65039; Ou Saisie Manuelle</h3>
+    <div class="grid2">
+      <div><label>Fournisseur *</label><input class="input" id="m-supplier"></div>
+      <div><label>N° Facture</label><input class="input" id="m-ref"></div>
+      <div><label>Date Facture</label><input type="date" class="input" id="m-date"></div>
+      <div><label>Date Échéance</label><input type="date" class="input" id="m-due"></div>
+      <div><label>Montant *</label><input type="number" step="0.01" class="input" id="m-amount"></div>
+      <div><label>Devise</label>
+        <select class="select" id="m-currency"><option value="TND">TND</option><option value="EUR">EUR</option><option value="USD">USD</option></select>
+      </div>
+      <div><label>Statut</label>
+        <select class="select" id="m-status"><option value="unpaid">Impayée</option><option value="paid">Payée</option><option value="overdue">En retard</option></select>
+      </div>
+      <div><label>Notes</label><input class="input" id="m-notes"></div>
+    </div>
+    <div style="margin-top:14px;">
+      <button class="btn btn-dark" onclick="saveManualInvoice()">&#10004; Ajouter</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- PAGE: INVOICES                                              -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="page" id="pg-invoices">
+  <div class="card">
+    <h3>&#128196; Liste des Factures</h3>
+    <!-- Filters -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:end;">
+      <div><label>Statut</label>
+        <select class="select" id="f-status" style="width:140px;" onchange="loadInvoices()">
+          <option value="">Tous</option><option value="paid">Payée</option>
+          <option value="unpaid">Impayée</option><option value="overdue">En retard</option>
+        </select>
+      </div>
+      <div><label>Devise</label>
+        <select class="select" id="f-currency" style="width:100px;" onchange="loadInvoices()">
+          <option value="">Toutes</option><option value="TND">TND</option><option value="EUR">EUR</option>
+        </select>
+      </div>
+      <div><label>Fournisseur</label>
+        <input class="input" id="f-supplier" style="width:160px;" placeholder="Rechercher…" oninput="loadInvoices()">
+      </div>
+      <div><label>Du</label><input type="date" class="input" id="f-from" style="width:140px;" onchange="loadInvoices()"></div>
+      <div><label>Au</label><input type="date" class="input" id="f-to" style="width:140px;" onchange="loadInvoices()"></div>
+      <button class="btn btn-outline btn-sm" onclick="clearFilters()">Réinitialiser</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="tbl" id="inv-table">
+        <thead><tr>
+          <th>Date</th><th>Fournisseur</th><th>Réf</th>
+          <th>Montant</th><th>Devise</th><th>Statut</th><th>Échéance</th><th>Actions</th>
+        </tr></thead>
+        <tbody id="inv-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- PAGE: FINANCES                                              -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="page" id="pg-finances">
+  <div class="card">
+    <h3>&#127974; Soldes Financiers</h3>
+    <div id="balances-list"></div>
+    <div style="margin-top:14px;border-top:1px solid #eee;padding-top:14px;">
+      <h4 style="font-size:13px;margin-bottom:10px;">Ajouter un Compte</h4>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+        <div><label>Nom</label><input class="input" id="new-acc-name" style="width:160px;" placeholder="ex: Compte Épargne"></div>
+        <div><label>Type</label>
+          <select class="select" id="new-acc-type" style="width:120px;">
+            <option value="bank">Banque</option><option value="cash">Caisse</option>
+          </select>
+        </div>
+        <div><label>Devise</label>
+          <select class="select" id="new-acc-cur" style="width:90px;">
+            <option value="TND">TND</option><option value="EUR">EUR</option>
+          </select>
+        </div>
+        <div><label>Solde</label><input type="number" step="0.01" class="input" id="new-acc-bal" style="width:120px;" value="0"></div>
+        <button class="btn btn-dark btn-sm" onclick="addAccount()">+ Ajouter</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- PAGE: KPIs                                                  -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="page" id="pg-kpis">
+  <div class="card">
+    <h3>&#128200; Indicateurs Clés de Performance (KPIs)</h3>
+    <p style="font-size:12px;color:#888;margin-bottom:14px;">
+      Top 10 KPIs financiers calculés en temps réel à partir de vos données.
+      Tous les montants sont normalisés en TND.
+    </p>
+    <div class="kpi-grid" id="kpi-grid"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- PAGE: SETTINGS                                              -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="page" id="pg-settings">
+  <div class="card">
+    <h3>&#9881; Paramètres</h3>
+    <div class="grid2" style="max-width:500px;">
+      <div>
+        <label>Taux EUR → TND</label>
+        <input type="number" step="0.01" class="input" id="rate-eur-tnd" value="{{ rates.eur_to_tnd }}">
+      </div>
+      <div>
+        <label>Taux TND → EUR</label>
+        <input type="number" step="0.0001" class="input" id="rate-tnd-eur" value="{{ rates.tnd_to_eur }}">
+      </div>
+    </div>
+    <div style="margin-top:12px;">
+      <button class="btn btn-pink" onclick="saveRates()">Sauvegarder les Taux</button>
+    </div>
+    <div style="margin-top:20px;">
+      <h4 style="font-size:13px;margin-bottom:8px;">Clé API Anthropic</h4>
+      <p style="font-size:12px;color:#888;">
+        Pour activer l'extraction IA automatique, configurez la variable d'environnement
+        <code>ANTHROPIC_API_KEY</code> dans les paramètres Vercel de votre projet.
+      </p>
+      <p style="font-size:12px;color:#888;margin-top:6px;">
+        Statut: <strong id="ai-status" style="color:#D61E8B;">Vérification…</strong>
+      </p>
+    </div>
+  </div>
+</div>
+
+</div><!-- /.main -->
+</div><!-- /.app-shell -->
+
+<div id="toast"></div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- EDIT MODAL (hidden)                                         -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;
+  display:none;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:10px;padding:24px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto;">
+    <h3 style="margin-bottom:14px;font-size:15px;color:#162142;">Modifier la Facture</h3>
+    <input type="hidden" id="ed-id">
+    <div class="grid2">
+      <div><label>Fournisseur</label><input class="input" id="ed-supplier"></div>
+      <div><label>N° Facture</label><input class="input" id="ed-ref"></div>
+      <div><label>Date Facture</label><input type="date" class="input" id="ed-date"></div>
+      <div><label>Date Échéance</label><input type="date" class="input" id="ed-due"></div>
+      <div><label>Montant</label><input type="number" step="0.01" class="input" id="ed-amount"></div>
+      <div><label>Devise</label>
+        <select class="select" id="ed-currency"><option value="TND">TND</option><option value="EUR">EUR</option><option value="USD">USD</option></select>
+      </div>
+      <div><label>Statut</label>
+        <select class="select" id="ed-status"><option value="unpaid">Impayée</option><option value="paid">Payée</option><option value="overdue">En retard</option><option value="uncertain">Incertain</option></select>
+      </div>
+      <div><label>Notes</label><input class="input" id="ed-notes"></div>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:10px;">
+      <button class="btn btn-pink" onclick="saveEdit()">Enregistrer</button>
+      <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SCRIPTS                                                     -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<script>
+/* ── Globals ───────────────────────────────────────────────── */
+let chartCF, chartStatus, chartSuppliers, chartCurrency;
+let uploadedFilename = '';
+
+/* ── Toast ─────────────────────────────────────────────────── */
+function toast(msg,type='info',ms=4000){
+  const t=document.getElementById('toast');t.className=type;t.textContent=msg;
+  t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',ms);
+}
+
+/* ── Navigation ────────────────────────────────────────────── */
+function showPage(id,el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('pg-'+id).classList.add('active');
+  document.querySelectorAll('.sidebar a').forEach(a=>a.classList.remove('active'));
+  if(el)el.classList.add('active');
+  if(id==='overview')loadDashboard();
+  if(id==='invoices')loadInvoices();
+  if(id==='finances')loadBalances();
+  if(id==='kpis')loadKPIs();
+}
+
+/* ── Fetch helpers ─────────────────────────────────────────── */
+const api=(url,opts)=>fetch(url,opts).then(r=>r.json());
+const post=(url,body)=>api(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+
+/* ═══════════════════════════════════════════════════════════ */
+/* DASHBOARD / OVERVIEW                                       */
+/* ═══════════════════════════════════════════════════════════ */
+async function loadDashboard(){
+  try{
+    const d=await api('/api/dashboard/data');
+
+    // Stats cards
+    const s=d.stats;
+    document.getElementById('top-stats').innerHTML=`
+      <div class="stat-card blue"><div class="label">Total Factures</div>
+        <div class="value">${s.total_invoices}</div><div class="sub">${s.total_amount_formatted}</div></div>
+      <div class="stat-card green"><div class="label">Payées</div>
+        <div class="value">${s.paid_count}</div><div class="sub">${s.paid_amount_formatted}</div></div>
+      <div class="stat-card red"><div class="label">Impayées</div>
+        <div class="value">${s.unpaid_count}</div><div class="sub">${s.unpaid_amount_formatted}</div></div>
+      <div class="stat-card"><div class="label">En Retard</div>
+        <div class="value">${s.overdue_count}</div><div class="sub">${s.overdue_amount_formatted}</div></div>
+      <div class="stat-card green"><div class="label">Trésorerie Nette</div>
+        <div class="value">${s.net_cash_formatted}</div><div class="sub">Tous comptes (TND)</div></div>
+    `;
+
+    // Overdue alerts
+    if(d.overdue_invoices&&d.overdue_invoices.length){
+      document.getElementById('alerts-card').style.display='block';
+      document.getElementById('alerts-list').innerHTML=d.overdue_invoices.map(i=>
+        `<div style="padding:8px 0;border-bottom:1px solid #eee;display:flex;justify-content:space-between;">
+          <span><strong>${i.supplier_name}</strong> — ${i.invoice_ref||'N/A'}</span>
+          <span style="color:#dc3545;font-weight:700;">${Number(i.amount).toLocaleString('fr-FR')} ${i.currency}</span>
+        </div>`).join('');
+    } else {
+      document.getElementById('alerts-card').style.display='none';
+    }
+
+    // Cash flow chart
+    const cf=d.cashflow;
+    if(chartCF)chartCF.destroy();
+    chartCF=new Chart(document.getElementById('chart-cashflow'),{type:'bar',
+      data:{labels:cf.labels,datasets:[
+        {label:'Entrées',data:cf.inflows,backgroundColor:'rgba(25,135,84,.6)'},
+        {label:'Sorties',data:cf.outflows,backgroundColor:'rgba(220,53,69,.6)'}
+      ]},options:{responsive:true,scales:{y:{beginAtZero:true}},plugins:{legend:{position:'bottom'}}}});
+
+    // Status pie
+    const st=d.status_dist;
+    if(chartStatus)chartStatus.destroy();
+    chartStatus=new Chart(document.getElementById('chart-status'),{type:'doughnut',
+      data:{labels:['Payées','Impayées','En retard'],
+        datasets:[{data:[st.counts.paid,st.counts.unpaid,st.counts.overdue],
+          backgroundColor:['#198754','#ffc107','#dc3545']}]},
+      options:{responsive:true,plugins:{legend:{position:'bottom'}}}});
+
+    // Supplier bar
+    const sup=d.supplier_totals;
+    if(chartSuppliers)chartSuppliers.destroy();
+    chartSuppliers=new Chart(document.getElementById('chart-suppliers'),{type:'bar',
+      data:{labels:Object.keys(sup).slice(0,8),datasets:[{label:'Montant (TND)',
+        data:Object.values(sup).slice(0,8),backgroundColor:'#D61E8B'}]},
+      options:{responsive:true,indexAxis:'y',plugins:{legend:{display:false}}}});
+
+    // Currency distribution
+    const cur=d.currency_dist;
+    if(chartCurrency)chartCurrency.destroy();
+    chartCurrency=new Chart(document.getElementById('chart-currency'),{type:'pie',
+      data:{labels:Object.keys(cur),datasets:[{data:Object.values(cur),
+        backgroundColor:['#162142','#D61E8B','#0d6efd','#198754']}]},
+      options:{responsive:true,plugins:{legend:{position:'bottom'}}}});
+
+    // AI insight
+    if(d.ai_insight){
+      document.getElementById('ai-insight').style.display='block';
+      document.getElementById('ai-insight-text').textContent=d.ai_insight;
+    }
+
+  }catch(e){toast('Erreur chargement dashboard: '+e,'error');}
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* UPLOAD & AI PROCESSING                                      */
+/* ═══════════════════════════════════════════════════════════ */
+// Drag & drop
+const dz=document.getElementById('drop-zone');
+['dragenter','dragover'].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.add('dragover');}));
+['dragleave','drop'].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.remove('dragover');}));
+dz.addEventListener('drop',ev=>{
+  const f=ev.dataTransfer.files[0];
+  if(f){document.getElementById('inv-file').files=ev.dataTransfer.files;onFileSelected(document.getElementById('inv-file'));}
+});
+
+function onFileSelected(input){
+  if(!input.files[0])return;
+  const file=input.files[0];
+  uploadedFilename=file.name;
+  if(file.size>10*1024*1024){toast('Fichier trop volumineux (max 10 Mo)','error');return;}
+
+  const proc=document.getElementById('proc-status');
+  proc.style.display='flex';
+  document.getElementById('proc-text').textContent='Analyse IA en cours… Cela peut prendre quelques secondes.';
+
+  const fd=new FormData();
+  fd.append('file',file);
+
+  fetch('/api/invoice/upload',{method:'POST',body:fd})
+    .then(r=>r.json())
+    .then(data=>{
+      proc.style.display='none';
+      if(data.error&&!data.extracted_fields){toast(data.error,'error',8000);return;}
+
+      const f=data.extracted_fields||{};
+      const c=data.confidence_scores||{};
+
+      document.getElementById('ex-supplier').value=f.supplier_name||'';
+      document.getElementById('ex-ref').value=f.invoice_ref||'';
+      document.getElementById('ex-date').value=f.invoice_date||'';
+      document.getElementById('ex-due').value=f.due_date||'';
+      document.getElementById('ex-amount').value=f.amount||0;
+      document.getElementById('ex-currency').value=f.currency||'TND';
+      document.getElementById('ex-status').value=f.payment_status||'unpaid';
+
+      // Confidence bars
+      setConfBar('cb-supplier',c.supplier_name);
+      setConfBar('cb-ref',c.invoice_ref);
+      setConfBar('cb-date',c.invoice_date);
+      setConfBar('cb-amount',c.amount);
+      setConfBar('cb-currency',c.currency);
+      setConfBar('cb-status',c.payment_status);
+
+      if(data.error){
+        document.getElementById('ai-warning').style.display='block';
+        document.getElementById('ai-warning').textContent=data.error;
+      }
+
+      document.getElementById('extract-card').style.display='block';
+    })
+    .catch(e=>{proc.style.display='none';toast('Erreur: '+e,'error');});
+}
+
+function setConfBar(id,score){
+  score=parseFloat(score)||0;
+  const el=document.getElementById(id);
+  if(!el)return;
+  const pct=Math.round(score*100);
+  const cls=score>=.8?'conf-high':score>=.5?'conf-med':'conf-low';
+  el.innerHTML=`<div class="conf-fill ${cls}" style="width:${pct}%"></div>`;
+  el.title=`Confiance: ${pct}%`;
+}
+
+function saveExtractedInvoice(){
+  const body={
+    supplier_name:document.getElementById('ex-supplier').value,
+    invoice_ref:document.getElementById('ex-ref').value,
+    invoice_date:document.getElementById('ex-date').value,
+    due_date:document.getElementById('ex-due').value,
+    amount:parseFloat(document.getElementById('ex-amount').value)||0,
+    currency:document.getElementById('ex-currency').value,
+    payment_status:document.getElementById('ex-status').value,
+    notes:document.getElementById('ex-notes').value,
+    original_filename:uploadedFilename,
+  };
+  post('/api/invoice/create',body).then(d=>{
+    if(d.error){toast(d.error,'error');return;}
+    toast('Facture enregistrée avec succès!','success');
+    resetUpload();
+  }).catch(e=>toast('Erreur: '+e,'error'));
+}
+
+function saveManualInvoice(){
+  const s=document.getElementById('m-supplier').value;
+  const a=parseFloat(document.getElementById('m-amount').value);
+  if(!s){toast('Fournisseur requis','error');return;}
+  if(!a){toast('Montant requis','error');return;}
+  const body={
+    supplier_name:s,
+    invoice_ref:document.getElementById('m-ref').value,
+    invoice_date:document.getElementById('m-date').value,
+    due_date:document.getElementById('m-due').value,
+    amount:a,
+    currency:document.getElementById('m-currency').value,
+    payment_status:document.getElementById('m-status').value,
+    notes:document.getElementById('m-notes').value,
+  };
+  post('/api/invoice/create',body).then(d=>{
+    if(d.error){toast(d.error,'error');return;}
+    toast('Facture ajoutée!','success');
+    ['m-supplier','m-ref','m-date','m-due','m-amount','m-notes'].forEach(id=>document.getElementById(id).value='');
+  }).catch(e=>toast('Erreur: '+e,'error'));
+}
+
+function resetUpload(){
+  document.getElementById('extract-card').style.display='none';
+  document.getElementById('ai-warning').style.display='none';
+  document.getElementById('inv-file').value='';
+  uploadedFilename='';
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* INVOICES LIST                                               */
+/* ═══════════════════════════════════════════════════════════ */
+function loadInvoices(){
+  const params=new URLSearchParams();
+  const s=document.getElementById('f-status').value;if(s)params.set('status',s);
+  const c=document.getElementById('f-currency').value;if(c)params.set('currency',c);
+  const su=document.getElementById('f-supplier').value;if(su)params.set('supplier',su);
+  const df=document.getElementById('f-from').value;if(df)params.set('date_from',df);
+  const dt=document.getElementById('f-to').value;if(dt)params.set('date_to',dt);
+
+  api('/api/invoice/list?'+params).then(d=>{
+    const tb=document.getElementById('inv-tbody');
+    if(!d.invoices||!d.invoices.length){
+      tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#888;padding:20px;">Aucune facture trouvée.</td></tr>';
+      return;
+    }
+    tb.innerHTML=d.invoices.map(i=>{
+      const badge=i.payment_status==='paid'?'badge-paid':i.payment_status==='overdue'?'badge-overdue':
+        i.payment_status==='uncertain'?'badge-uncertain':'badge-unpaid';
+      const label=i.payment_status==='paid'?'Payée':i.payment_status==='overdue'?'En retard':
+        i.payment_status==='uncertain'?'Incertain':'Impayée';
+      return `<tr>
+        <td>${i.invoice_date||'—'}</td>
+        <td>${i.supplier_name}</td>
+        <td>${i.invoice_ref||'—'}</td>
+        <td style="text-align:right;font-weight:700;">${Number(i.amount).toLocaleString('fr-FR',{minimumFractionDigits:2})}</td>
+        <td>${i.currency}</td>
+        <td><span class="badge ${badge}">${label}</span></td>
+        <td>${i.due_date||'—'}</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick='editInvoice(${JSON.stringify(i)})'>&#9998;</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteInvoice('${i.id}')">&#128465;</button>
+        </td>
+      </tr>`;}).join('');
+  });
+}
+
+function clearFilters(){
+  ['f-status','f-currency','f-supplier','f-from','f-to'].forEach(id=>document.getElementById(id).value='');
+  loadInvoices();
+}
+
+function editInvoice(inv){
+  document.getElementById('ed-id').value=inv.id;
+  document.getElementById('ed-supplier').value=inv.supplier_name;
+  document.getElementById('ed-ref').value=inv.invoice_ref;
+  document.getElementById('ed-date').value=inv.invoice_date;
+  document.getElementById('ed-due').value=inv.due_date;
+  document.getElementById('ed-amount').value=inv.amount;
+  document.getElementById('ed-currency').value=inv.currency;
+  document.getElementById('ed-status').value=inv.payment_status;
+  document.getElementById('ed-notes').value=inv.notes||'';
+  document.getElementById('edit-modal').style.display='flex';
+}
+
+function closeModal(){document.getElementById('edit-modal').style.display='none';}
+
+function saveEdit(){
+  const body={
+    id:document.getElementById('ed-id').value,
+    supplier_name:document.getElementById('ed-supplier').value,
+    invoice_ref:document.getElementById('ed-ref').value,
+    invoice_date:document.getElementById('ed-date').value,
+    due_date:document.getElementById('ed-due').value,
+    amount:parseFloat(document.getElementById('ed-amount').value)||0,
+    currency:document.getElementById('ed-currency').value,
+    payment_status:document.getElementById('ed-status').value,
+    notes:document.getElementById('ed-notes').value,
+  };
+  post('/api/invoice/update',body).then(d=>{
+    if(d.error){toast(d.error,'error');return;}
+    toast('Facture mise à jour!','success');closeModal();loadInvoices();
+  }).catch(e=>toast('Erreur: '+e,'error'));
+}
+
+function deleteInvoice(id){
+  if(!confirm('Supprimer cette facture?'))return;
+  post('/api/invoice/delete',{id}).then(d=>{
+    if(d.error){toast(d.error,'error');return;}
+    toast('Facture supprimée','success');loadInvoices();
+  }).catch(e=>toast('Erreur: '+e,'error'));
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* FINANCES                                                    */
+/* ═══════════════════════════════════════════════════════════ */
+function loadBalances(){
+  api('/api/finance/balances').then(d=>{
+    const el=document.getElementById('balances-list');
+    if(!d.accounts||!d.accounts.length){el.innerHTML='<p style="color:#888;">Aucun compte configuré.</p>';return;}
+    el.innerHTML=d.accounts.map(a=>`
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #eee;">
+        <div style="flex:1;">
+          <strong>${a.name}</strong>
+          <span style="font-size:11px;color:#888;margin-left:8px;">${a.type==='bank'?'Banque':'Caisse'} — ${a.currency}</span>
+        </div>
+        <input type="number" step="0.01" class="input" style="width:160px;text-align:right;font-weight:700;"
+          value="${a.balance}" onchange="updateBalance('${a.id}',this.value)">
+        <span style="font-weight:600;color:#162142;">${a.currency}</span>
+        <button class="btn btn-danger btn-sm" onclick="deleteAccount('${a.id}')">&#128465;</button>
+      </div>`).join('');
+  });
+}
+
+function updateBalance(id,val){
+  post('/api/finance/balance',{id,balance:parseFloat(val)||0}).then(()=>toast('Solde mis à jour','success')).catch(e=>toast('Erreur: '+e,'error'));
+}
+
+function addAccount(){
+  const name=document.getElementById('new-acc-name').value.trim();
+  if(!name){toast('Nom requis','error');return;}
+  post('/api/finance/add_account',{
+    name,type:document.getElementById('new-acc-type').value,
+    currency:document.getElementById('new-acc-cur').value,
+    balance:parseFloat(document.getElementById('new-acc-bal').value)||0,
+  }).then(()=>{toast('Compte ajouté','success');document.getElementById('new-acc-name').value='';loadBalances();});
+}
+
+function deleteAccount(id){
+  if(!confirm('Supprimer ce compte?'))return;
+  post('/api/finance/delete_account',{id}).then(()=>{toast('Compte supprimé','success');loadBalances();});
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* KPIs                                                        */
+/* ═══════════════════════════════════════════════════════════ */
+function loadKPIs(){
+  api('/api/dashboard/data').then(d=>{
+    const grid=document.getElementById('kpi-grid');
+    if(!d.kpis||!d.kpis.length){grid.innerHTML='<p style="color:#888;">Pas assez de données pour calculer les KPIs.</p>';return;}
+    grid.innerHTML=d.kpis.map(k=>{
+      const valClass=k.trend==='positive'?'positive':k.trend==='negative'?'negative':'neutral';
+      return `<div class="kpi-card">
+        <div class="kpi-name">${k.name}</div>
+        <div class="kpi-val ${valClass}">${k.formatted}</div>
+        <div class="kpi-desc">${k.description}</div>
+      </div>`;}).join('');
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* SETTINGS                                                    */
+/* ═══════════════════════════════════════════════════════════ */
+function saveRates(){
+  post('/api/finance/exchange_rate',{
+    eur_to_tnd:parseFloat(document.getElementById('rate-eur-tnd').value)||3.35,
+    tnd_to_eur:parseFloat(document.getElementById('rate-tnd-eur').value)||0.2985,
+  }).then(()=>toast('Taux sauvegardés','success')).catch(e=>toast('Erreur: '+e,'error'));
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+/* INIT                                                        */
+/* ═══════════════════════════════════════════════════════════ */
+(function(){
+  loadDashboard();
+  // Check AI status
+  api('/api/ai/status').then(d=>{
+    document.getElementById('ai-status').textContent=d.available?'Activé ✓':'Non configuré';
+    document.getElementById('ai-status').style.color=d.available?'#198754':'#dc3545';
+  }).catch(()=>{});
+})();
+</script>
+</body>
+</html>
