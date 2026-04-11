@@ -1,76 +1,134 @@
-"""Excel importer - loads employee data from Excel files"""
+"""Excel importer — loads employee data from .xlsx files.
+
+Pure openpyxl implementation (no pandas/numpy) to keep the Vercel
+serverless bundle under 250 MB. API is drop-in compatible with the
+previous pandas-backed version.
+"""
 from pathlib import Path
 from typing import List, Dict, Optional
-import pandas as pd
-from datetime import datetime
 
 
 class ExcelImporter:
-    """Handles importing employee data from Excel files"""
+    """Handles importing employee data from .xlsx files."""
 
     def __init__(self):
-        self.df: Optional[pd.DataFrame] = None
         self.file_path: Optional[Path] = None
+        self._columns: List[str] = []
+        self._rows:    List[Dict]  = []
 
+    # ─── Loading ─────────────────────────────────────────────────────
     def load_excel(self, file_path: str) -> bool:
         try:
+            from openpyxl import load_workbook
             self.file_path = Path(file_path)
-            self.df = pd.read_excel(file_path)
+            wb = load_workbook(file_path, data_only=True, read_only=True)
+            ws = wb.active
+
+            rows_iter = ws.iter_rows(values_only=True)
+            try:
+                header = next(rows_iter)
+            except StopIteration:
+                self._columns = []
+                self._rows    = []
+                wb.close()
+                return True
+
+            self._columns = [self._norm_header(c, i) for i, c in enumerate(header)]
+            self._rows    = []
+            for row in rows_iter:
+                if row is None or all(v is None or v == '' for v in row):
+                    continue
+                row_dict = {
+                    self._columns[i]: self._cell_to_py(v)
+                    for i, v in enumerate(row)
+                    if i < len(self._columns)
+                }
+                self._rows.append(row_dict)
+            wb.close()
             return True
         except Exception as e:
             print(f"Error loading Excel file: {e}")
+            self._columns = []
+            self._rows    = []
             return False
 
+    # ─── Query API (matches legacy pandas-based interface) ──────────
     def get_columns(self) -> List[str]:
-        if self.df is None:
-            return []
-        return list(self.df.columns)
+        return list(self._columns)
 
     def get_rows_count(self) -> int:
-        if self.df is None:
-            return 0
-        return len(self.df)
+        return len(self._rows)
 
     def get_all_rows(self) -> List[Dict]:
-        if self.df is None:
-            return []
-        return self.df.to_dict('records')
+        return [dict(r) for r in self._rows]
 
     def get_row(self, index: int) -> Optional[Dict]:
-        if self.df is None or index >= len(self.df):
+        if index < 0 or index >= len(self._rows):
             return None
-        return self.df.iloc[index].to_dict()
+        return dict(self._rows[index])
 
     def get_row_data(self, index: int) -> Dict:
-        row = self.get_row(index)
-        return row if row else {}
+        return self.get_row(index) or {}
 
     def get_column_values(self, column_name: str) -> List:
-        if self.df is None or column_name not in self.df.columns:
+        if column_name not in self._columns:
             return []
-        return self.df[column_name].tolist()
+        return [r.get(column_name) for r in self._rows]
 
     def search_employee(self, name: str) -> List[Dict]:
-        if self.df is None:
+        if not self._rows:
             return []
-        for col in self.df.columns:
-            if 'name' in col.lower() or 'nom' in col.lower():
-                matches = self.df[self.df[col].str.contains(name, case=False, na=False)]
-                return matches.to_dict('records')
-        return []
+        needle = (name or '').strip().lower()
+        if not needle:
+            return []
+        name_cols = [
+            c for c in self._columns
+            if 'name' in c.lower() or 'nom' in c.lower()
+        ]
+        if not name_cols:
+            return []
+        col = name_cols[0]
+        return [
+            dict(r) for r in self._rows
+            if isinstance(r.get(col), str) and needle in r[col].lower()
+        ]
 
     def map_columns(self, mapping: Dict[str, str]) -> bool:
-        if self.df is None:
+        if not self._columns:
             return False
         try:
-            rename_dict = {old: new for old, new in mapping.items() if old in self.df.columns}
-            self.df.rename(columns=rename_dict, inplace=True)
+            new_cols = [mapping.get(c, c) for c in self._columns]
+            new_rows = []
+            for r in self._rows:
+                new_rows.append({
+                    mapping.get(k, k): v for k, v in r.items()
+                })
+            self._columns = new_cols
+            self._rows    = new_rows
             return True
         except Exception as e:
             print(f"Error mapping columns: {e}")
             return False
 
     def get_sample_rows(self, num_rows: int = 5) -> List[Dict]:
-        if self.df is None:
-            return []
-        return self.df.head(num_rows).to_dict('records')
+        return [dict(r) for r in self._rows[:num_rows]]
+
+    # ─── Helpers ─────────────────────────────────────────────────────
+    @staticmethod
+    def _norm_header(value, index: int) -> str:
+        if value is None or str(value).strip() == '':
+            return f'col_{index}'
+        return str(value).strip()
+
+    @staticmethod
+    def _cell_to_py(value):
+        # Convert openpyxl datetimes/numbers to JSON-friendly scalars.
+        if value is None:
+            return ''
+        try:
+            from datetime import datetime, date
+            if isinstance(value, (datetime, date)):
+                return value.isoformat()
+        except Exception:
+            pass
+        return value

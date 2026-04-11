@@ -1,9 +1,8 @@
 Flask==2.3.3
-python-docx==0.8.11
-pandas==2.2.0
-openpyxl==3.1.2
-requests==2.31.0
 Werkzeug==2.3.7
+requests==2.31.0
+python-docx==0.8.11
+openpyxl==3.1.2
 pypdf>=4.0.0
 pdfminer.six>=20221105
 pymupdf>=1.23.0
