@@ -5,3 +5,4 @@ openpyxl==3.1.2
 requests==2.31.0
 Werkzeug==2.3.7
 pypdf>=4.0.0
+pdfminer.six>=20221105

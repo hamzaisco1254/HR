@@ -61,10 +61,31 @@ def chunk_text(text: str, size: int = 900, overlap: int = 120) -> list:
 
 
 def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
-    """Best-effort extraction from PDF / DOCX / TXT / MD."""
+    """Best-effort extraction from PDF / DOCX / TXT / MD.
+
+    PDF strategy (tried in order until one returns text):
+      1. pdfminer.six  — handles most modern/digitally-created PDFs
+      2. pypdf          — fallback for simpler PDFs
+    """
     fn = (filename or '').lower()
 
     if fn.endswith('.pdf'):
+        # ── Strategy 1: pdfminer.six ──────────────────────────────
+        try:
+            from pdfminer.high_level import extract_text as pdfminer_extract
+            text = pdfminer_extract(io.BytesIO(file_bytes)) or ''
+            # Clean up form-feed characters and excessive blank lines
+            text = text.replace('\x0c', '\n')
+            text = '\n'.join(
+                line for line in text.splitlines()
+                if line.strip()
+            )
+            if len(text.strip()) >= 30:
+                return text
+        except Exception:
+            pass
+
+        # ── Strategy 2: pypdf fallback ────────────────────────────
         try:
             from pypdf import PdfReader
             reader = PdfReader(io.BytesIO(file_bytes))
@@ -74,11 +95,15 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
                     txt = page.extract_text() or ''
                 except Exception:
                     txt = ''
-                if txt:
+                if txt.strip():
                     parts.append(txt)
-            return '\n\n'.join(parts)
+            text = '\n\n'.join(parts)
+            if len(text.strip()) >= 30:
+                return text
         except Exception:
-            return ''
+            pass
+
+        return ''
 
     if fn.endswith('.docx'):
         try:
@@ -160,19 +185,35 @@ class RagStore:
         text = extract_text_from_file(file_bytes, filename)
         if not text or len(text.strip()) < 30:
             raise ValueError(
-                "Texte non extrait. Le fichier est vide, protege ou au format image."
+                "Texte non extrait. Le fichier est vide, protege ou au format image non-OCR."
             )
 
-        chunks = chunk_text(text, size=900, overlap=120)
+        # ── Adaptive chunking ──────────────────────────────────────────
+        # Cap at MAX_CHUNKS to stay within Vercel's execution timeout.
+        # For very large docs, increase chunk size so the count stays
+        # under the limit rather than silently cutting off content.
+        MAX_CHUNKS = 500
+        chunk_size = 900
+        overlap    = 120
+
+        chunks = chunk_text(text, size=chunk_size, overlap=overlap)
+
+        if len(chunks) > MAX_CHUNKS:
+            # Scale up chunk size proportionally so we land near MAX_CHUNKS
+            ratio      = len(chunks) / MAX_CHUNKS
+            chunk_size = min(int(chunk_size * ratio), 4000)
+            overlap    = min(int(chunk_size * 0.12), 300)
+            chunks     = chunk_text(text, size=chunk_size, overlap=overlap)
+            # Hard cap as safety net
+            chunks     = chunks[:MAX_CHUNKS]
+
         if not chunks:
             raise ValueError("Aucun contenu indexable trouve.")
 
-        # Batch-embed (max 100 per call)
+        # Embed sequentially with rate-limit throttle (see gemini_client.py)
         all_embeddings = []
         try:
-            for i in range(0, len(chunks), 100):
-                batch = chunks[i:i + 100]
-                all_embeddings.extend(embed_batch(batch, task_type='RETRIEVAL_DOCUMENT'))
+            all_embeddings = embed_batch(chunks, task_type='RETRIEVAL_DOCUMENT')
         except Exception as e:
             raise RuntimeError(f"Echec de l'indexation (embeddings) : {e}")
 
