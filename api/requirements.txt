@@ -4,5 +4,4 @@ pandas==2.2.0
 openpyxl==3.1.2
 requests==2.31.0
 Werkzeug==2.3.7
-anthropic>=0.39.0
 pypdf>=4.0.0

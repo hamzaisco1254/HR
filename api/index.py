@@ -683,7 +683,7 @@ def api_finance_exchange_rate():
 @app.route('/api/ai/status')
 @login_required
 def api_ai_status():
-    return jsonify({'available': bool(os.environ.get('ANTHROPIC_API_KEY', '').strip())})
+    return jsonify({'available': gemini_configured()})
 
 
 # ═══════════════════════════════════════════════════════════════════
