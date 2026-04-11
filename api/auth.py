@@ -8,12 +8,17 @@ Features:
 - Flask session-based auth (signed cookies)
 - KV persistence + /tmp fallback (same pattern as rest of codebase)
 
-Environment variables:
-- ADMIN_EMAIL     (default: admin@plwtunisia.com)
-- ADMIN_PASSWORD  (default: ***REDACTED***)
+REQUIRED environment variables for production:
+- ADMIN_EMAIL     : primary admin email address
+- ADMIN_PASSWORD  : strong admin password (12+ chars)
+
+If ADMIN_PASSWORD is not set, a random one is generated and LOGGED once at
+startup (visible in Vercel function logs) so the operator can retrieve it.
+The ephemeral password is NOT persisted anywhere else.
 """
 import json
 import os
+import secrets as _secrets
 import tempfile
 import uuid
 from datetime import datetime
@@ -96,21 +101,41 @@ class UserStore:
             pass
 
     def _ensure_admin(self):
-        """Create admin account if none exists."""
+        """Create admin account if none exists.
+
+        - ADMIN_EMAIL must be provided via env var (falls back to a sentinel
+          that will not work until the operator fixes it).
+        - ADMIN_PASSWORD: if missing, a random 20-char password is generated
+          and printed ONCE to the server logs. The operator must read it from
+          logs and immediately change it after first login.
+        """
         admin_exists = any(u.get('role') == 'admin' for u in self.users)
-        if not admin_exists:
-            admin_email = os.environ.get('ADMIN_EMAIL', 'admin@plwtunisia.com')
-            admin_pass = os.environ.get('ADMIN_PASSWORD', '***REDACTED***')
-            self.users.append({
-                'id': str(uuid.uuid4()),
-                'email': admin_email,
-                'password_hash': generate_password_hash(admin_pass),
-                'name': 'Administrateur',
-                'role': 'admin',
-                'active': True,
-                'created_at': datetime.now().isoformat(),
-            })
-            self._save()
+        if admin_exists:
+            return
+
+        admin_email = os.environ.get('ADMIN_EMAIL', '').strip()
+        if not admin_email:
+            admin_email = 'admin@example.invalid'
+            print('[SECURITY WARNING] ADMIN_EMAIL env var not set — '
+                  'using placeholder. Set it in Vercel env vars.')
+
+        admin_pass = os.environ.get('ADMIN_PASSWORD', '').strip()
+        if not admin_pass:
+            admin_pass = _secrets.token_urlsafe(16)
+            print(f'[SECURITY WARNING] ADMIN_PASSWORD env var not set — '
+                  f'generated one-time password: {admin_pass}  '
+                  f'(login with {admin_email}, change immediately)')
+
+        self.users.append({
+            'id':            str(uuid.uuid4()),
+            'email':         admin_email,
+            'password_hash': generate_password_hash(admin_pass),
+            'name':          'Administrateur',
+            'role':          'admin',
+            'active':        True,
+            'created_at':    datetime.now().isoformat(),
+        })
+        self._save()
 
     # ── Authentication ──────────────────────────────────────────
 

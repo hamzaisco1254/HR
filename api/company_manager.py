@@ -1,8 +1,14 @@
 """Company data persistence manager (web/Vercel version).
 
-Reads initial data from config/company.json (bundled with repo).
-User edits are saved to /tmp/hr_company.json so they survive warm
-invocations.  KV persistence is used when KV_REST_API_URL is set.
+Load order (first hit wins):
+    1. Vercel KV  (`hr_company` key)               ← user-edited data
+    2. /tmp/hr_company.json                         ← warm-invocation cache
+    3. $COMPANY_JSON env var                       ← production seed
+    4. config/company.json (placeholder only)      ← dev / test default
+
+Real company data (legal ID, representative, address) MUST be provided
+via the COMPANY_JSON env var on Vercel. The repo contains only a
+placeholder template so no PII is ever committed to git.
 """
 import json
 import os
@@ -13,12 +19,13 @@ _API_DIR = os.path.dirname(os.path.abspath(__file__))
 _ROOT_DIR = os.path.dirname(_API_DIR)
 _PROJECT_PATH = os.path.join(_ROOT_DIR, 'config', 'company.json')
 
+# Anonymous placeholder — NO real PII. Real values come from env var.
 _DEFAULTS = {
-    "name": "PLW Tunisia",
-    "legal_id": "***REDACTED***",
-    "representative_name": "***REDACTED***",
-    "address": "***REDACTED***",
-    "city": "Tunis",
+    "name":                "Your Company",
+    "legal_id":            "",
+    "representative_name": "",
+    "address":             "",
+    "city":                "",
 }
 
 
@@ -33,12 +40,12 @@ class CompanyManager:
     # ------------------------------------------------------------------
 
     def _load(self) -> dict:
-        # 1. Try KV
+        # 1. KV (persisted user edits)
         kv = _kv_get('hr_company')
         if kv:
             return kv
 
-        # 2. Try /tmp (user-modified)
+        # 2. /tmp (warm-invocation cache of user edits)
         if os.path.exists(_TMP_PATH):
             try:
                 with open(_TMP_PATH, 'r', encoding='utf-8') as f:
@@ -46,7 +53,17 @@ class CompanyManager:
             except Exception:
                 pass
 
-        # 3. Fall back to bundled config
+        # 3. COMPANY_JSON env var (production seed — real data lives here)
+        env_blob = os.environ.get('COMPANY_JSON', '').strip()
+        if env_blob:
+            try:
+                data = json.loads(env_blob)
+                if isinstance(data, dict):
+                    return {**_DEFAULTS, **data}
+            except json.JSONDecodeError:
+                print('[WARNING] COMPANY_JSON env var is not valid JSON — ignoring')
+
+        # 4. Repo placeholder (dev/test defaults only, no PII)
         if os.path.exists(_PROJECT_PATH):
             try:
                 with open(_PROJECT_PATH, 'r', encoding='utf-8') as f:

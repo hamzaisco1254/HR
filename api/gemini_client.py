@@ -11,10 +11,7 @@ import os
 import time
 import requests
 
-GEMINI_API_KEY = os.environ.get(
-    'GEMINI_API_KEY',
-    'REDACTED_GEMINI_KEY',
-).strip()
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '').strip()
 
 EMBED_MODEL = 'gemini-embedding-001'
 CHAT_MODEL = 'gemini-2.5-flash'

@@ -2,3 +2,21 @@
 __pycache__/
 *.pyc
 .claude/
+
+# ── Secrets ───────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Runtime data (never commit) ───────────────────────────────────
+config/document_history.json
+config/rag.json
+config/trips.json
+config/references.json
+# Note: config/company.json IS tracked as a placeholder only.
+#       Real company data comes from COMPANY_JSON env var.
+
+# ── Local development artefacts ───────────────────────────────────
+*.log
+.DS_Store
+Thumbs.db

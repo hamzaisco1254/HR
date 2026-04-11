@@ -5,14 +5,24 @@ All routes are protected by authentication. Admin can manage up to 5 users.
 """
 import io
 import json
+import logging
 import os
 import sys
 import tempfile
+import traceback
 from datetime import datetime, timedelta
 from urllib.parse import quote, urlparse, parse_qs
 
+# ── Structured server-side logging ──────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s %(name)s - %(message)s',
+)
+logger = logging.getLogger('plw')
+
 from flask import (Flask, render_template, request, send_file,
                    redirect, url_for, jsonify, session)
+from werkzeug.utils import secure_filename
 
 # ---------------------------------------------------------------------------
 # Path setup
@@ -45,10 +55,33 @@ app = Flask(
     __name__,
     template_folder=os.path.join(_API_DIR, 'templates'),
 )
-app.secret_key = os.environ.get('SECRET_KEY', '***REDACTED***')
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+# SECRET_KEY must be provided via environment variable.
+# If missing, we generate a random ephemeral one and log a loud warning:
+# sessions will not survive cold starts, which is a visible symptom that
+# forces the operator to set the variable in Vercel.
+_secret = os.environ.get('SECRET_KEY', '').strip()
+if not _secret:
+    import secrets as _sec
+    _secret = _sec.token_hex(32)
+    print('[SECURITY WARNING] SECRET_KEY env var not set — using ephemeral key. '
+          'Sessions will not persist across cold starts. Set SECRET_KEY in Vercel env vars.')
+app.secret_key = _secret
+
+app.config['MAX_CONTENT_LENGTH']      = 50 * 1024 * 1024
+app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE']   = True   # HTTPS only
+
+# ── Security headers on every response ──────────────────────────────────
+@app.after_request
+def _set_security_headers(resp):
+    resp.headers['X-Content-Type-Options']    = 'nosniff'
+    resp.headers['X-Frame-Options']           = 'DENY'
+    resp.headers['Referrer-Policy']           = 'strict-origin-when-cross-origin'
+    resp.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    resp.headers['Permissions-Policy']        = 'camera=(), microphone=(), geolocation=()'
+    return resp
 
 _TMP = tempfile.gettempdir()
 _UPLOAD_DIR = os.path.join(_TMP, 'hr_uploads')
@@ -371,8 +404,9 @@ def attestation():
             history_mgr.add_document(reference=reference, doc_type='attestation',
                                      employee_name=employee.name, file_path=filename)
             return _send_docx(buf, filename)
-        except Exception as e:
-            return jsonify({'error': str(e)}), 400
+        except Exception:
+            logger.exception('attestation_generation_failed')
+            return jsonify({'error': "Impossible de generer l'attestation. Verifiez les donnees saisies."}), 400
     return render_template('app.html', **_ctx('attestation'))
 
 
@@ -414,8 +448,9 @@ def ordre_mission():
             history_mgr.add_document(reference=reference, doc_type='ordre_mission',
                                      employee_name=employee.name, file_path=filename)
             return _send_docx(buf, filename)
-        except Exception as e:
-            return jsonify({'error': str(e)}), 400
+        except Exception:
+            logger.exception('ordre_mission_generation_failed')
+            return jsonify({'error': "Impossible de generer l'ordre de mission. Verifiez les donnees saisies."}), 400
     return render_template('app.html', **_ctx('ordre_mission'))
 
 
@@ -460,7 +495,10 @@ def api_load_excel():
         uploaded = request.files.get('excel_file')
         url = (request.form.get('excel_url') or '').strip()
         if uploaded and uploaded.filename:
-            tmp_path = os.path.join(_UPLOAD_DIR, uploaded.filename)
+            safe_name = secure_filename(uploaded.filename) or 'upload.xlsx'
+            if not safe_name.lower().endswith(('.xlsx', '.xls')):
+                return jsonify({'error': 'Format non supporte (xlsx/xls uniquement)'}), 400
+            tmp_path = os.path.join(_UPLOAD_DIR, safe_name)
             uploaded.save(tmp_path)
         elif url:
             normalized = normalize_cloud_excel_url(url)
@@ -486,8 +524,9 @@ def api_load_excel():
         return jsonify({'status': 'ok', 'id_column': id_col, 'count': len(employees), 'employees': employees})
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
-    except Exception as e:
-        return jsonify({'error': f'Erreur: {str(e)}'}), 500
+    except Exception:
+        logger.exception('excel_load_failed')
+        return jsonify({'error': 'Erreur lors du chargement du fichier Excel.'}), 500
     finally:
         if tmp_path and os.path.exists(tmp_path):
             try: os.unlink(tmp_path)
@@ -594,8 +633,11 @@ def api_invoice_upload():
     f = request.files.get('file')
     if not f or not f.filename:
         return jsonify({'error': 'Aucun fichier fourni'}), 400
+    safe_name = secure_filename(f.filename) or 'invoice'
+    if not safe_name.lower().endswith(('.pdf', '.png', '.jpg', '.jpeg', '.webp')):
+        return jsonify({'error': 'Format non supporte (pdf/png/jpg/webp uniquement)'}), 400
     file_bytes = f.read()
-    result = process_invoice(file_bytes, f.filename)
+    result = process_invoice(file_bytes, safe_name)
     return jsonify(result)
 
 
@@ -798,9 +840,10 @@ def api_trips_upload_document():
     f = request.files.get('file')
     if not f or not f.filename:
         return jsonify({'error': 'Aucun fichier fourni'}), 400
+    safe_name = secure_filename(f.filename) or 'document'
     blob = f.read()
     result = trips_store.update_document(did, key, {
-        'file_name': f.filename,
+        'file_name': safe_name,
         'file_size': len(blob),
         'status': 'completed',
     })
@@ -880,19 +923,21 @@ def api_chat_upload():
     category = request.form.get('category', 'other')
     if not f or not f.filename:
         return jsonify({'error': 'Aucun fichier fourni'}), 400
+    safe_name = secure_filename(f.filename) or 'document'
     allowed = ('.pdf', '.docx', '.txt', '.md')
-    if not f.filename.lower().endswith(allowed):
+    if not safe_name.lower().endswith(allowed):
         return jsonify({'error': f"Format non supporte. Utilisez : {', '.join(allowed)}"}), 400
     try:
         blob = f.read()
         if len(blob) > 50 * 1024 * 1024:
             return jsonify({'error': 'Fichier trop volumineux (max 50 Mo)'}), 400
-        result = rag_store.add_document(f.filename, blob, category=category)
+        result = rag_store.add_document(safe_name, blob, category=category)
         return jsonify({'status': 'ok', **result})
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
-    except Exception as e:
-        return jsonify({'error': f'Erreur : {e}'}), 500
+    except Exception:
+        logger.exception('chat_upload_failed')
+        return jsonify({'error': "Echec de l'indexation du document. Verifiez le format et reessayez."}), 500
 
 
 @app.route('/api/chat/delete', methods=['POST'])
@@ -973,8 +1018,9 @@ def api_chat_query():
             temperature=0.3,
             max_tokens=2000,
         )
-    except Exception as e:
-        return jsonify({'error': f'Erreur IA : {e}'}), 500
+    except Exception:
+        logger.exception('gemini_chat_failed')
+        return jsonify({'error': 'Le service IA est momentanement indisponible. Reessayez dans quelques instants.'}), 503
 
     # ── Sources (deduped by filename, only good matches) ──────────────
     seen    = set()
