@@ -10,6 +10,7 @@ import io
 import json
 import math
 import os
+import re
 import uuid
 from datetime import datetime
 
@@ -60,32 +61,59 @@ def chunk_text(text: str, size: int = 900, overlap: int = 120) -> list:
     return chunks
 
 
-def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
-    """Best-effort extraction from PDF / DOCX / TXT / MD.
+def _clean_text(text: str) -> str:
+    """Normalise extracted text: strip form-feeds, collapse blank lines."""
+    if not text:
+        return ''
+    # Remove PDF form-feed markers
+    text = text.replace('\x0c', '\n')
+    # Remove null bytes and other control chars (keep newlines/tabs)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+    # Collapse 3+ consecutive newlines to 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
-    PDF strategy (tried in order until one returns text):
-      1. pdfminer.six  — handles most modern/digitally-created PDFs
-      2. pypdf          — fallback for simpler PDFs
+
+def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
+    """Best-effort multilingual text extraction (AR / FR / EN) from PDF/DOCX/TXT/MD.
+
+    PDF extraction order (first that returns ≥ 50 chars wins):
+      1. PyMuPDF  — best overall: handles Arabic RTL, complex layouts, most encodings
+      2. pdfminer.six — good for Western-language PDFs
+      3. pypdf    — last-resort fallback
     """
     fn = (filename or '').lower()
 
     if fn.endswith('.pdf'):
-        # ── Strategy 1: pdfminer.six ──────────────────────────────
+
+        # ── Strategy 1: PyMuPDF (fitz) ───────────────────────────
+        # Handles Arabic, French, English, mixed layouts, modern PDFs.
         try:
-            from pdfminer.high_level import extract_text as pdfminer_extract
-            text = pdfminer_extract(io.BytesIO(file_bytes)) or ''
-            # Clean up form-feed characters and excessive blank lines
-            text = text.replace('\x0c', '\n')
-            text = '\n'.join(
-                line for line in text.splitlines()
-                if line.strip()
-            )
-            if len(text.strip()) >= 30:
+            import fitz  # pymupdf
+            doc = fitz.open(stream=file_bytes, filetype='pdf')
+            parts = []
+            for page in doc:
+                # Use 'text' layout which handles RTL/LTR automatically
+                txt = page.get_text('text') or ''
+                if txt.strip():
+                    parts.append(txt)
+            doc.close()
+            text = _clean_text('\n\n'.join(parts))
+            if len(text.strip()) >= 50:
                 return text
         except Exception:
             pass
 
-        # ── Strategy 2: pypdf fallback ────────────────────────────
+        # ── Strategy 2: pdfminer.six ──────────────────────────────
+        try:
+            from pdfminer.high_level import extract_text as pdfminer_extract
+            text = _clean_text(pdfminer_extract(io.BytesIO(file_bytes)) or '')
+            if len(text.strip()) >= 50:
+                return text
+        except Exception:
+            pass
+
+        # ── Strategy 3: pypdf ─────────────────────────────────────
         try:
             from pypdf import PdfReader
             reader = PdfReader(io.BytesIO(file_bytes))
@@ -97,8 +125,8 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
                     txt = ''
                 if txt.strip():
                     parts.append(txt)
-            text = '\n\n'.join(parts)
-            if len(text.strip()) >= 30:
+            text = _clean_text('\n\n'.join(parts))
+            if len(text.strip()) >= 50:
                 return text
         except Exception:
             pass
@@ -110,19 +138,18 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
             from docx import Document
             doc = Document(io.BytesIO(file_bytes))
             parts = [p.text for p in doc.paragraphs if p.text and p.text.strip()]
-            # Also grab table text
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
                         if cell.text and cell.text.strip():
                             parts.append(cell.text.strip())
-            return '\n\n'.join(parts)
+            return _clean_text('\n\n'.join(parts))
         except Exception:
             return ''
 
     if fn.endswith('.txt') or fn.endswith('.md'):
         try:
-            return file_bytes.decode('utf-8', errors='ignore')
+            return _clean_text(file_bytes.decode('utf-8', errors='ignore'))
         except Exception:
             return ''
 
@@ -262,7 +289,14 @@ class RagStore:
         }
 
     # -- Retrieval ------------------------------------------------------
-    def search(self, query: str, top_k: int = 5) -> list:
+    def search(self, query: str, top_k: int = 8, threshold: float = 0.0) -> list:
+        """Return top-k chunks sorted by cosine similarity.
+
+        Parameters
+        ----------
+        threshold : float
+            Minimum cosine similarity to include a chunk (0.0 = no filter).
+        """
         d = self._read()
         if not d['documents'] or not query.strip():
             return []
@@ -274,15 +308,18 @@ class RagStore:
         for doc in d['documents']:
             for chunk in doc.get('chunks', []):
                 sim = cosine_similarity(q_emb, chunk.get('embedding', []))
-                scored.append({
-                    'doc_id': doc['id'],
-                    'filename': doc['filename'],
-                    'category': doc.get('category', 'other'),
-                    'category_label': CATEGORIES.get(
-                        doc.get('category', 'other'), 'Autre'),
-                    'chunk_idx': chunk.get('idx', 0),
-                    'text': chunk.get('text', ''),
-                    'score': sim,
-                })
+                if sim >= threshold:
+                    scored.append({
+                        'doc_id':         doc['id'],
+                        'filename':       doc['filename'],
+                        'category':       doc.get('category', 'other'),
+                        'category_label': CATEGORIES.get(doc.get('category', 'other'), 'Autre'),
+                        'chunk_idx':      chunk.get('idx', 0),
+                        'text':           chunk.get('text', ''),
+                        'score':          sim,
+                    })
         scored.sort(key=lambda x: x['score'], reverse=True)
         return scored[:top_k]
+
+    def has_documents(self) -> bool:
+        return bool(self._read().get('documents'))

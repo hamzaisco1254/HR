@@ -813,29 +813,41 @@ def api_trips_upload_document():
 # MR HAMZA — AI HR LEGAL CHATBOT (RAG + Gemini)
 # ═══════════════════════════════════════════════════════════════════
 
-MR_HAMZA_SYSTEM_PROMPT = """Tu es Mr Hamza, un assistant IA expert en droit du travail, conseil juridique RH et politiques d'entreprise.
+_MR_HAMZA_BASE = """Tu es Mr Hamza, un assistant IA expert en ressources humaines, droit du travail (tunisien, français et international), gestion d'entreprise et conseil juridique RH.
 
-IDENTITE:
-- Nom: Mr Hamza
-- Role: Conseiller juridique RH intelligent
-- Ton: Professionnel, precis, legalement prudent, structure
+IDENTITE :
+- Nom : Mr Hamza
+- Rôle : Conseiller RH & juridique intelligent
+- Langues : Réponds TOUJOURS dans la langue de la question — français (défaut), anglais, arabe
+- Ton : Professionnel, précis, structuré, utile
 
-REGLES ABSOLUES:
-1. Tu reponds UNIQUEMENT en te basant sur les extraits de documents fournis dans la section CONTEXTE.
-2. Si l'information n'est pas dans le contexte, dis clairement : "Je n'ai pas trouve d'information sur ce point dans les documents disponibles. Je vous recommande de consulter directement la convention collective ou un juriste RH."
-3. Cite TOUJOURS tes sources a la fin de ta reponse sous forme : **Sources :** nom_du_document (passage N)
-4. Ne JAMAIS inventer d'articles, de lois, de chiffres ou de clauses. Reste fidele aux extraits.
-5. Adapte la langue de ta reponse a celle de la question (francais, anglais, arabe). Par defaut francais.
-6. Structure tes reponses avec des listes a puces ou des sections claires lorsque c'est pertinent.
-7. Mentionne explicitement l'article, la section ou le chapitre si present dans les extraits.
-8. Si plusieurs sources traitent le meme sujet, compare-les et signale d'eventuelles contradictions entre la loi, la convention et les politiques internes.
-9. Termine toujours par un bref rappel : "_Ces informations sont fournies a titre indicatif et ne constituent pas un conseil juridique definitif._"
+RÈGLES GÉNÉRALES :
+1. Tu réponds TOUJOURS. Ne dis jamais que tu ne peux pas répondre.
+2. Adapte automatiquement la langue à celle de la question (FR / EN / AR).
+3. Structure tes réponses : réponse directe → développement → sources → disclaimer.
+4. Ne JAMAIS inventer d'articles, de numéros de loi ou de clauses inexistants.
+5. Termine chaque réponse par : _Ces informations sont fournies à titre indicatif et ne constituent pas un conseil juridique définitif._"""
 
-STYLE:
-- Commence par une reponse directe a la question (1-2 phrases)
-- Developpe ensuite avec des points structures
-- Cite les sources
-- Ajoute le disclaimer final"""
+_MR_HAMZA_WITH_DOCS = _MR_HAMZA_BASE + """
+
+MODE : DOCUMENTS DISPONIBLES
+Des extraits pertinents ont été trouvés dans la base de connaissances interne.
+- Priorise ces extraits pour répondre et cite-les précisément (nom du fichier + numéro de passage).
+- Complète avec tes connaissances générales RH/juridiques si nécessaire, en le signalant.
+- Si plusieurs sources traitent le même sujet, compare-les et signale les contradictions éventuelles.
+- Mentionne les articles, sections et chapitres présents dans les extraits."""
+
+_MR_HAMZA_NO_DOCS = _MR_HAMZA_BASE + """
+
+MODE : CONNAISSANCES GÉNÉRALES
+Aucun extrait spécifiquement pertinent n'a été trouvé dans la base de connaissances sur ce sujet.
+- Réponds en te basant sur tes connaissances en droit du travail, RH et gestion d'entreprise.
+- Pour les questions sur la Tunisie, réfère-toi au Code du Travail tunisien (Loi 66-27 et modifications).
+- Indique clairement que ta réponse est basée sur tes connaissances générales (pas un document interne).
+- Recommande de vérifier avec les documents internes de l'entreprise ou un juriste si nécessaire."""
+
+# Minimum cosine similarity to consider a chunk "relevant"
+_RAG_THRESHOLD = 0.22
 
 
 @app.route('/api/chat/status')
@@ -873,8 +885,8 @@ def api_chat_upload():
         return jsonify({'error': f"Format non supporte. Utilisez : {', '.join(allowed)}"}), 400
     try:
         blob = f.read()
-        if len(blob) > 15 * 1024 * 1024:
-            return jsonify({'error': 'Fichier trop volumineux (max 15 Mo)'}), 400
+        if len(blob) > 50 * 1024 * 1024:
+            return jsonify({'error': 'Fichier trop volumineux (max 50 Mo)'}), 400
         result = rag_store.add_document(f.filename, blob, category=category)
         return jsonify({'status': 'ok', **result})
     except ValueError as e:
@@ -904,7 +916,7 @@ def api_chat_query():
     if len(question) > 2000:
         question = question[:2000]
 
-    # Conversation memory (user-side, last N exchanges)
+    # ── Conversation memory ───────────────────────────────────────────
     raw_history = data.get('history', []) or []
     history = []
     for m in raw_history[-10:]:
@@ -915,57 +927,76 @@ def api_chat_query():
                 'text': (m.get('text') or m.get('content') or '')[:3000],
             })
 
-    # Retrieve top-k relevant chunks
-    results = rag_store.search(question, top_k=6)
+    # ── RAG retrieval with relevance threshold ────────────────────────
+    all_results  = rag_store.search(question, top_k=8, threshold=0.0)
+    good_results = [r for r in all_results if r['score'] >= _RAG_THRESHOLD]
 
-    # Build grounded context
+    # Use good results if any; fall back to top-3 raw if KB has docs
+    # but nothing scored high (still gives LLM something to work with)
+    has_kb_docs  = rag_store.has_documents()
+    if good_results:
+        results      = good_results[:6]
+        system_prompt = _MR_HAMZA_WITH_DOCS
+        rag_mode     = 'documents'
+    elif has_kb_docs and all_results:
+        # KB has documents but none closely matched — pass top-3 anyway
+        results      = all_results[:3]
+        system_prompt = _MR_HAMZA_WITH_DOCS
+        rag_mode     = 'documents_weak'
+    else:
+        results      = []
+        system_prompt = _MR_HAMZA_NO_DOCS
+        rag_mode     = 'general'
+
+    # ── Build prompt ──────────────────────────────────────────────────
     if results:
         context_blocks = []
         for r in results:
             context_blocks.append(
-                f"[SOURCE: {r['filename']} | Categorie: {r['category_label']} | Passage #{r['chunk_idx'] + 1}]\n{r['text']}"
+                f"[SOURCE : {r['filename']} | {r['category_label']} | Passage #{r['chunk_idx'] + 1} | Score : {r['score']:.2f}]\n{r['text']}"
             )
         context = '\n\n────────\n\n'.join(context_blocks)
+        user_prompt = (
+            f"CONTEXTE — extraits des documents internes :\n\n{context}\n\n"
+            f"{'═' * 40}\n\n"
+            f"QUESTION : {question}"
+        )
     else:
-        context = "(Aucun extrait pertinent trouve dans la base de connaissances)"
+        user_prompt = f"QUESTION : {question}"
 
-    user_prompt = (
-        f"CONTEXTE (extraits des documents charges) :\n\n{context}\n\n"
-        f"═══════════════════════════════════\n\n"
-        f"QUESTION DE L'UTILISATEUR :\n{question}"
-    )
-
+    # ── Generate ──────────────────────────────────────────────────────
     try:
         answer = gemini_generate(
-            MR_HAMZA_SYSTEM_PROMPT,
+            system_prompt,
             user_prompt,
             history=history,
-            temperature=0.25,
-            max_tokens=1800,
+            temperature=0.3,
+            max_tokens=2000,
         )
     except Exception as e:
         return jsonify({'error': f'Erreur IA : {e}'}), 500
 
-    # Build source list with previews (deduped by filename)
-    seen = set()
+    # ── Sources (deduped by filename, only good matches) ──────────────
+    seen    = set()
     sources = []
-    for r in results:
+    for r in (good_results or all_results[:3]):
         if r['filename'] in seen:
             continue
         seen.add(r['filename'])
         sources.append({
             'filename': r['filename'],
             'category': r['category_label'],
-            'score': round(float(r['score']), 3),
-            'preview': r['text'][:220] + ('...' if len(r['text']) > 220 else ''),
+            'score':    round(float(r['score']), 3),
+            'preview':  r['text'][:220] + ('...' if len(r['text']) > 220 else ''),
         })
         if len(sources) >= 4:
             break
 
     return jsonify({
-        'answer': answer,
-        'sources': sources,
+        'answer':           answer,
+        'sources':          sources,
         'retrieved_chunks': len(results),
+        'rag_mode':         rag_mode,
     })
 
 
