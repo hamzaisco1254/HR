@@ -352,8 +352,267 @@ select{cursor:pointer;appearance:none;
 @keyframes modalIn{from{opacity:0;transform:translateY(20px) scale(.96);}to{opacity:1;transform:none;}}
 .modal-box h3{font-size:17px;color:var(--text);margin-bottom:22px;font-weight:800;}
 
+/* ═══════════════════════════════════════════════ */
+/* ══════ TRIPS & VISA MANAGEMENT MODULE ═════════ */
+/* ═══════════════════════════════════════════════ */
+
+/* View switcher tabs */
+.view-tabs{display:inline-flex;background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:4px;gap:2px;box-shadow:var(--shadow-sm);}
+.view-tabs button{background:none;border:none;padding:8px 18px;font-size:12px;
+  font-weight:700;cursor:pointer;color:var(--text-sec);border-radius:var(--radius-xs);
+  transition:var(--transition);display:inline-flex;align-items:center;gap:6px;
+  font-family:var(--font);letter-spacing:.3px;}
+.view-tabs button:hover{color:var(--text);}
+.view-tabs button.active{background:linear-gradient(135deg,var(--pink),var(--purple));
+  color:#fff;box-shadow:0 2px 8px rgba(214,30,139,.3);}
+.view-tabs button svg{width:14px;height:14px;}
+
+/* Trips stat strip */
+.trips-stat-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:14px;margin-bottom:24px;}
+.trips-stat{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:20px 22px;display:flex;align-items:center;gap:14px;
+  box-shadow:var(--shadow-sm);transition:var(--transition);position:relative;overflow:hidden;}
+.trips-stat:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);}
+.trips-stat .icon-wrap{width:44px;height:44px;border-radius:12px;display:flex;
+  align-items:center;justify-content:center;flex-shrink:0;}
+.trips-stat .icon-wrap.pink{background:linear-gradient(135deg,rgba(214,30,139,.15),rgba(214,30,139,.05));color:var(--pink);}
+.trips-stat .icon-wrap.blue{background:linear-gradient(135deg,rgba(59,130,246,.15),rgba(59,130,246,.05));color:var(--blue);}
+.trips-stat .icon-wrap.green{background:linear-gradient(135deg,rgba(16,185,129,.15),rgba(16,185,129,.05));color:var(--green);}
+.trips-stat .icon-wrap.amber{background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.05));color:var(--amber);}
+.trips-stat .icon-wrap.red{background:linear-gradient(135deg,rgba(239,68,68,.15),rgba(239,68,68,.05));color:var(--red);}
+.trips-stat .stat-content .num{font-size:26px;font-weight:900;color:var(--text);
+  line-height:1;letter-spacing:-.5px;}
+.trips-stat .stat-content .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.8px;font-weight:700;margin-top:5px;}
+
+/* Filter bar */
+.trips-toolbar{background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;
+  display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:var(--shadow-sm);}
+.trips-toolbar .search-wrap{flex:1;min-width:200px;position:relative;}
+.trips-toolbar .search-wrap svg{position:absolute;left:12px;top:50%;
+  transform:translateY(-50%);color:var(--muted);pointer-events:none;}
+.trips-toolbar .search-wrap input{padding-left:38px;width:100%;
+  background:var(--bg);border:1.5px solid transparent;}
+.trips-toolbar .search-wrap input:focus{background:#fff;border-color:var(--pink);}
+.trips-toolbar select{min-width:140px;}
+
+/* Progress cards grid */
+.trips-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:18px;}
+.trip-card{background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:22px;box-shadow:var(--shadow-sm);
+  cursor:pointer;transition:var(--transition);position:relative;overflow:hidden;}
+.trip-card::before{content:'';position:absolute;top:0;left:0;bottom:0;width:4px;
+  background:linear-gradient(180deg,var(--muted),var(--muted));transition:var(--transition);}
+.trip-card.status-critical::before{background:linear-gradient(180deg,var(--red),#f87171);}
+.trip-card.status-progress::before{background:linear-gradient(180deg,var(--amber),#fbbf24);}
+.trip-card.status-ready::before{background:linear-gradient(180deg,var(--green),#34d399);}
+.trip-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg);border-color:var(--pink);}
+.trip-card .card-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px;}
+.trip-card .person-avatar{width:44px;height:44px;border-radius:12px;
+  background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:800;
+  font-size:15px;flex-shrink:0;box-shadow:0 4px 12px rgba(214,30,139,.25);}
+.trip-card .person-info{flex:1;min-width:0;}
+.trip-card .person-info .name{font-size:14px;font-weight:800;color:var(--text);
+  letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.trip-card .person-info .sub{font-size:11px;color:var(--muted);
+  display:flex;align-items:center;gap:6px;margin-top:3px;}
+.trip-card .type-badge{display:inline-flex;align-items:center;gap:4px;
+  padding:4px 10px;border-radius:20px;font-size:10px;font-weight:800;
+  text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;}
+.trip-card .type-badge.trip{background:var(--blue-soft);color:var(--blue);}
+.trip-card .type-badge.visa{background:var(--purple-soft);color:var(--purple);}
+.trip-card .title{font-size:14px;font-weight:700;color:var(--text);margin:2px 0 10px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.trip-card .meta-row{display:flex;align-items:center;gap:14px;font-size:11px;
+  color:var(--text-sec);margin-bottom:12px;flex-wrap:wrap;}
+.trip-card .meta-row span{display:inline-flex;align-items:center;gap:4px;}
+.trip-card .meta-row svg{width:12px;height:12px;opacity:.6;}
+.trip-card .deadline-urgent{color:var(--red);font-weight:700;}
+.trip-card .progress-wrap-big{margin-bottom:12px;}
+.trip-card .progress-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.trip-card .progress-head .lbl{font-size:10px;font-weight:700;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.8px;}
+.trip-card .progress-head .val{font-size:13px;font-weight:900;color:var(--text);}
+.trip-card .pbar{height:8px;background:var(--border-l);border-radius:10px;overflow:hidden;position:relative;}
+.trip-card .pbar-fill{height:100%;border-radius:10px;
+  transition:width .6s cubic-bezier(.16,1,.3,1);
+  background:linear-gradient(90deg,var(--pink),var(--purple));}
+.trip-card.status-ready .pbar-fill{background:linear-gradient(90deg,var(--green),#34d399);}
+.trip-card.status-progress .pbar-fill{background:linear-gradient(90deg,var(--amber),#fbbf24);}
+.trip-card.status-critical .pbar-fill{background:linear-gradient(90deg,var(--red),#f87171);}
+.trip-card .doc-counts{display:flex;gap:10px;align-items:center;font-size:11px;
+  padding-top:12px;border-top:1px solid var(--border-l);color:var(--text-sec);}
+.trip-card .doc-counts .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;}
+.trip-card .doc-counts .dot.g{background:var(--green);}
+.trip-card .doc-counts .dot.a{background:var(--amber);}
+.trip-card .doc-counts .dot.r{background:var(--muted);}
+
+/* Kanban board */
+.kanban-board{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+.kanban-col{background:var(--bg);border:1.5px dashed var(--border);
+  border-radius:var(--radius);padding:16px;min-height:300px;transition:var(--transition);}
+.kanban-col.drop-active{background:var(--pink-soft);border-color:var(--pink);}
+.kanban-col .col-head{display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:14px;padding:0 4px;}
+.kanban-col .col-title{font-size:12px;font-weight:800;color:var(--text);
+  text-transform:uppercase;letter-spacing:.8px;display:flex;align-items:center;gap:8px;}
+.kanban-col .col-title::before{content:'';width:8px;height:8px;border-radius:50%;}
+.kanban-col.todo .col-title::before{background:var(--red);}
+.kanban-col.doing .col-title::before{background:var(--amber);}
+.kanban-col.done .col-title::before{background:var(--green);}
+.kanban-col .col-count{background:#fff;color:var(--text-sec);border:1px solid var(--border);
+  padding:2px 10px;border-radius:20px;font-size:11px;font-weight:800;}
+.kanban-col .col-body{display:flex;flex-direction:column;gap:12px;}
+.kanban-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:14px;box-shadow:var(--shadow-sm);cursor:pointer;
+  transition:var(--transition);position:relative;}
+.kanban-card:hover{box-shadow:var(--shadow);transform:translateY(-2px);border-color:var(--pink);}
+.kanban-card .kc-top{display:flex;gap:10px;margin-bottom:10px;align-items:center;}
+.kanban-card .kc-avatar{width:32px;height:32px;border-radius:8px;
+  background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;flex-shrink:0;}
+.kanban-card .kc-name{font-size:12px;font-weight:700;color:var(--text);flex:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.kanban-card .kc-type{font-size:9px;font-weight:800;padding:2px 7px;border-radius:10px;text-transform:uppercase;}
+.kanban-card .kc-type.trip{background:var(--blue-soft);color:var(--blue);}
+.kanban-card .kc-type.visa{background:var(--purple-soft);color:var(--purple);}
+.kanban-card .kc-title{font-size:12px;color:var(--text-sec);margin-bottom:8px;font-weight:600;}
+.kanban-card .kc-pbar{height:6px;background:var(--border-l);border-radius:6px;overflow:hidden;}
+.kanban-card .kc-pbar-fill{height:100%;background:linear-gradient(90deg,var(--pink),var(--purple));
+  transition:width .5s ease;}
+.kanban-card .kc-foot{display:flex;justify-content:space-between;align-items:center;
+  margin-top:8px;font-size:10px;color:var(--muted);font-weight:700;}
+
+/* Persons list */
+.persons-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;}
+.person-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:20px;box-shadow:var(--shadow-sm);transition:var(--transition);position:relative;}
+.person-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);border-color:var(--pink);}
+.person-card .p-head{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+.person-card .p-avatar{width:48px;height:48px;border-radius:14px;
+  background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:900;font-size:17px;
+  box-shadow:0 4px 12px rgba(214,30,139,.25);flex-shrink:0;}
+.person-card .p-name{font-size:15px;font-weight:800;color:var(--text);}
+.person-card .p-cin{font-size:11px;color:var(--muted);font-weight:600;}
+.person-card .p-body{font-size:12px;color:var(--text-sec);line-height:1.8;}
+.person-card .p-body .row{display:flex;align-items:center;gap:6px;}
+.person-card .p-body svg{width:12px;height:12px;opacity:.5;flex-shrink:0;}
+.person-card .p-stats{display:flex;gap:8px;margin-top:12px;}
+.person-card .p-stats span{font-size:10px;padding:3px 8px;border-radius:10px;font-weight:700;}
+.person-card .p-stats .s-trip{background:var(--blue-soft);color:var(--blue);}
+.person-card .p-stats .s-visa{background:var(--purple-soft);color:var(--purple);}
+.person-card .p-actions{display:flex;gap:6px;margin-top:14px;padding-top:12px;
+  border-top:1px solid var(--border-l);}
+.person-card .p-actions button{flex:1;padding:7px;font-size:11px;}
+
+/* Drawer (dossier detail) */
+.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:250;
+  display:none;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
+.drawer-overlay.show{display:block;animation:fadeIn .2s ease;}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:600px;max-width:95vw;
+  background:var(--card);box-shadow:-20px 0 60px rgba(0,0,0,.2);
+  z-index:251;transform:translateX(100%);transition:transform .35s cubic-bezier(.16,1,.3,1);
+  display:flex;flex-direction:column;}
+.drawer.show{transform:translateX(0);}
+.drawer-head{padding:24px 28px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0;
+  background:linear-gradient(135deg,var(--card),var(--bg));}
+.drawer-head .title-block h3{font-size:18px;font-weight:800;color:var(--text);letter-spacing:-.3px;}
+.drawer-head .title-block .subtitle{font-size:12px;color:var(--text-sec);margin-top:3px;
+  display:flex;align-items:center;gap:8px;}
+.drawer-head .close-btn{background:var(--bg);border:1px solid var(--border);
+  width:36px;height:36px;border-radius:10px;cursor:pointer;display:flex;
+  align-items:center;justify-content:center;color:var(--text-sec);transition:var(--transition);}
+.drawer-head .close-btn:hover{background:var(--red-soft);color:var(--red);border-color:var(--red);}
+.drawer-body{flex:1;overflow-y:auto;padding:24px 28px;}
+.drawer-section{margin-bottom:26px;}
+.drawer-section h4{font-size:11px;font-weight:800;color:var(--muted);
+  text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;
+  display:flex;align-items:center;gap:8px;}
+.drawer-section h4::before{content:'';width:3px;height:14px;border-radius:3px;
+  background:linear-gradient(180deg,var(--pink),var(--purple));}
+.drawer-progress-ring{display:flex;align-items:center;gap:20px;
+  background:linear-gradient(135deg,var(--navy),var(--navy-l));border-radius:var(--radius);
+  padding:22px 26px;color:#fff;margin-bottom:20px;position:relative;overflow:hidden;}
+.drawer-progress-ring::before{content:'';position:absolute;top:-50%;right:-20%;
+  width:240px;height:240px;background:radial-gradient(circle,rgba(214,30,139,.18),transparent 60%);}
+.drawer-progress-ring .big-num{font-size:40px;font-weight:900;letter-spacing:-1px;
+  position:relative;z-index:1;background:linear-gradient(135deg,#fff,#e0e7ff);-webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;background-clip:text;}
+.drawer-progress-ring .big-num span{font-size:20px;opacity:.7;}
+.drawer-progress-ring .info{position:relative;z-index:1;flex:1;}
+.drawer-progress-ring .info .lbl{font-size:10px;text-transform:uppercase;
+  letter-spacing:1.5px;opacity:.6;font-weight:700;}
+.drawer-progress-ring .info .val{font-size:14px;font-weight:700;margin-top:4px;}
+.drawer-progress-ring .info .mini-bar{height:6px;background:rgba(255,255,255,.15);
+  border-radius:6px;overflow:hidden;margin-top:12px;}
+.drawer-progress-ring .info .mini-bar-fill{height:100%;
+  background:linear-gradient(90deg,var(--pink),#ff8fcc);border-radius:6px;
+  transition:width .6s cubic-bezier(.16,1,.3,1);}
+
+/* Document checklist */
+.doc-list{display:flex;flex-direction:column;gap:8px;}
+.doc-item{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius-sm);
+  padding:14px 16px;transition:var(--transition);position:relative;overflow:hidden;}
+.doc-item::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;
+  background:var(--muted);transition:var(--transition);}
+.doc-item.status-completed::before{background:var(--green);}
+.doc-item.status-in_progress::before{background:var(--amber);}
+.doc-item.status-pending::before{background:var(--muted);}
+.doc-item:hover{border-color:var(--pink);box-shadow:var(--shadow-sm);}
+.doc-item .doc-head{display:flex;align-items:center;gap:12px;}
+.doc-item .doc-icon{width:36px;height:36px;border-radius:10px;
+  background:var(--bg);display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;color:var(--text-sec);font-size:16px;}
+.doc-item.status-completed .doc-icon{background:var(--green-soft);color:var(--green);}
+.doc-item.status-in_progress .doc-icon{background:var(--amber-soft);color:var(--amber);}
+.doc-item .doc-name{flex:1;font-size:13px;font-weight:700;color:var(--text);min-width:0;}
+.doc-item .doc-name .doc-note{display:block;font-size:11px;color:var(--muted);
+  font-weight:500;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.doc-item .doc-name .doc-file{display:inline-flex;align-items:center;gap:4px;
+  font-size:10px;color:#065f46;font-weight:700;margin-top:5px;
+  background:var(--green-soft);padding:3px 10px;border-radius:12px;}
+.doc-item .doc-status{display:flex;gap:4px;flex-shrink:0;}
+.doc-item .doc-status button{background:var(--bg);border:1.5px solid var(--border);
+  width:30px;height:30px;border-radius:8px;cursor:pointer;display:flex;
+  align-items:center;justify-content:center;transition:var(--transition);color:var(--muted);}
+.doc-item .doc-status button:hover{transform:scale(1.1);}
+.doc-item .doc-status button.active{color:#fff;border-color:transparent;}
+.doc-item .doc-status button.btn-pending.active{background:var(--muted);}
+.doc-item .doc-status button.btn-progress.active{background:var(--amber);}
+.doc-item .doc-status button.btn-done.active{background:var(--green);}
+.doc-item .doc-status .upload-btn{background:var(--pink-soft);color:var(--pink);border-color:transparent;}
+.doc-item .doc-status .upload-btn:hover{background:var(--pink);color:#fff;}
+.doc-item .doc-status .note-btn:hover{border-color:var(--blue);color:var(--blue);}
+.doc-note-input{margin-top:12px;display:none;}
+.doc-note-input.show{display:block;animation:slideDown .3s ease;}
+@keyframes slideDown{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:none;}}
+.doc-note-input textarea{width:100%;resize:vertical;min-height:60px;font-family:var(--font);
+  padding:10px 12px;border:1.5px solid var(--border);border-radius:var(--radius-xs);
+  font-size:12px;color:var(--text);}
+.doc-note-input textarea:focus{border-color:var(--pink);outline:none;box-shadow:0 0 0 4px var(--pink-soft);}
+
+/* Empty state */
+.empty-state{text-align:center;padding:60px 20px;color:var(--text-sec);}
+.empty-state .empty-icon{width:80px;height:80px;margin:0 auto 20px;
+  background:linear-gradient(135deg,var(--pink-soft),var(--purple-soft));
+  border-radius:24px;display:flex;align-items:center;justify-content:center;color:var(--pink);}
+.empty-state h3{font-size:16px;font-weight:800;color:var(--text);margin-bottom:6px;border:none;padding:0;display:block;}
+.empty-state p{font-size:13px;color:var(--text-sec);margin-bottom:20px;}
+
+/* Action bar */
+.action-bar{display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:20px;flex-wrap:wrap;gap:14px;}
+.action-bar .btn-group{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+
 /* ── Responsive ────────────────────────────────── */
-@media(max-width:1024px){.chart-row{grid-template-columns:1fr;}}
+@media(max-width:1024px){.chart-row{grid-template-columns:1fr;}.kanban-board{grid-template-columns:1fr;}}
+@media(max-width:900px){.trips-cards-grid{grid-template-columns:1fr;}.drawer{width:100%;}}
 @media(max-width:768px){
   .sidebar{position:fixed;left:0;top:60px;bottom:0;z-index:50;width:280px;
     transform:translateX(-100%);box-shadow:var(--shadow-xl);}
@@ -420,6 +679,11 @@ select{cursor:pointer;appearance:none;
   <a href="#" class="{% if active_tab=='historique' %}active{% endif %}" onclick="showPage('historique',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     Historique</a>
+  <div class="sep"></div>
+  <div class="sec">Voyages & Visa</div>
+  <a href="#" class="{% if active_tab=='trips' %}active{% endif %}" onclick="showPage('trips',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
+    Trips & Visa</a>
   <div class="sep"></div>
   <div class="sec">Finance & Intelligence</div>
   <a href="#" class="{% if active_tab=='overview' %}active{% endif %}" onclick="showPage('overview',this)">
@@ -575,6 +839,177 @@ select{cursor:pointer;appearance:none;
     </div>
   </div>
 </div>
+
+<!-- ═══════ TRIPS & VISA MANAGEMENT ═══════ -->
+<div class="page {% if active_tab=='trips' %}active{% endif %}" id="pg-trips">
+  <div class="page-header"><h2>Voyages & Visa</h2><p>Suivez et gerez les dossiers de voyage et de visa pour plusieurs personnes</p></div>
+
+  <!-- Stats strip -->
+  <div class="trips-stat-strip" id="trips-stats"></div>
+
+  <!-- Action bar + view switcher -->
+  <div class="action-bar">
+    <div class="view-tabs" id="trips-views">
+      <button class="active" data-view="cards" onclick="tripsSetView('cards',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Cartes
+      </button>
+      <button data-view="kanban" onclick="tripsSetView('kanban',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="14" rx="1"/><rect x="17" y="3" width="5" height="10" rx="1"/></svg>
+        Kanban
+      </button>
+      <button data-view="persons" onclick="tripsSetView('persons',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/></svg>
+        Personnes
+      </button>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-outline btn-sm" onclick="openPersonModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+        Ajouter Personne
+      </button>
+      <button class="btn btn-pink btn-sm" onclick="openDossierModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nouveau Dossier
+      </button>
+    </div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="trips-toolbar">
+    <div class="search-wrap">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="input" id="trips-search" placeholder="Rechercher par nom ou titre..." oninput="tripsRender()">
+    </div>
+    <select class="select" id="trips-filter-person" onchange="tripsRender()"><option value="">Toutes les personnes</option></select>
+    <select class="select" id="trips-filter-type" onchange="tripsRender()">
+      <option value="">Tous types</option>
+      <option value="trip">Voyage</option>
+      <option value="visa">Visa</option>
+    </select>
+    <select class="select" id="trips-filter-status" onchange="tripsRender()">
+      <option value="">Tous statuts</option>
+      <option value="critical">Critique</option>
+      <option value="progress">En cours</option>
+      <option value="ready">Pret</option>
+    </select>
+  </div>
+
+  <!-- Views -->
+  <div id="trips-view-cards">
+    <div class="trips-cards-grid" id="trips-cards-container"></div>
+  </div>
+
+  <div id="trips-view-kanban" style="display:none;">
+    <div class="kanban-board">
+      <div class="kanban-col todo" data-col="todo">
+        <div class="col-head"><div class="col-title">A faire</div><div class="col-count" id="k-count-todo">0</div></div>
+        <div class="col-body" id="k-body-todo"></div>
+      </div>
+      <div class="kanban-col doing" data-col="doing">
+        <div class="col-head"><div class="col-title">En cours</div><div class="col-count" id="k-count-doing">0</div></div>
+        <div class="col-body" id="k-body-doing"></div>
+      </div>
+      <div class="kanban-col done" data-col="done">
+        <div class="col-head"><div class="col-title">Termines</div><div class="col-count" id="k-count-done">0</div></div>
+        <div class="col-body" id="k-body-done"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="trips-view-persons" style="display:none;">
+    <div class="persons-grid" id="persons-container"></div>
+  </div>
+</div>
+
+<!-- Drawer: dossier detail -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="dossier-drawer">
+  <div class="drawer-head">
+    <div class="title-block">
+      <h3 id="drawer-title">Dossier</h3>
+      <div class="subtitle" id="drawer-subtitle"></div>
+    </div>
+    <button class="close-btn" onclick="closeDrawer()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="drawer-body">
+    <div class="drawer-progress-ring">
+      <div class="big-num" id="drawer-pct">0<span>%</span></div>
+      <div class="info">
+        <div class="lbl">Progression</div>
+        <div class="val" id="drawer-progress-text">0 / 0 documents</div>
+        <div class="mini-bar"><div class="mini-bar-fill" id="drawer-minibar" style="width:0%;"></div></div>
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <h4>Informations</h4>
+      <div class="grid2">
+        <div><label>Titre</label><input class="input" id="drawer-title-input"></div>
+        <div><label>Destination</label><input class="input" id="drawer-destination"></div>
+        <div><label>Deadline</label><input type="date" class="input" id="drawer-deadline"></div>
+        <div><label>Notes</label><input class="input" id="drawer-notes"></div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-pink btn-sm" onclick="saveDossierInfo()">Sauvegarder</button>
+        <button class="btn btn-outline btn-sm" onclick="duplicateDossier()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          Dupliquer
+        </button>
+        <button class="btn btn-danger btn-sm" onclick="deleteDossier()">Supprimer</button>
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <h4>Documents Requis</h4>
+      <div class="doc-list" id="drawer-doc-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Person Modal -->
+<div class="modal-overlay" id="person-modal">
+  <div class="modal-box">
+    <h3 id="person-modal-title">Ajouter une Personne</h3>
+    <input type="hidden" id="person-id">
+    <div class="grid2">
+      <div><label>Prenom *</label><input class="input" id="person-first"></div>
+      <div><label>Nom *</label><input class="input" id="person-last"></div>
+      <div><label>CIN</label><input class="input" id="person-cin"></div>
+      <div><label>Passeport</label><input class="input" id="person-passport"></div>
+      <div><label>Telephone</label><input class="input" id="person-phone"></div>
+      <div><label>Email</label><input type="email" class="input" id="person-email"></div>
+    </div>
+    <div style="margin-top:20px;display:flex;gap:10px;">
+      <button class="btn btn-pink" onclick="savePerson()">Sauvegarder</button>
+      <button class="btn btn-outline" onclick="closePersonModal()">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Dossier Modal -->
+<div class="modal-overlay" id="dossier-modal">
+  <div class="modal-box">
+    <h3>Nouveau Dossier</h3>
+    <div class="grid2">
+      <div><label>Personne *</label><select class="select" id="dossier-person"></select></div>
+      <div><label>Type *</label><select class="select" id="dossier-type"><option value="trip">Voyage</option><option value="visa">Visa</option></select></div>
+      <div><label>Titre</label><input class="input" id="dossier-title" placeholder="Ex: Mission Berlin 2026"></div>
+      <div><label>Destination</label><input class="input" id="dossier-destination" placeholder="Allemagne"></div>
+      <div><label>Deadline</label><input type="date" class="input" id="dossier-deadline"></div>
+      <div><label>Notes</label><input class="input" id="dossier-notes"></div>
+    </div>
+    <div style="margin-top:20px;display:flex;gap:10px;">
+      <button class="btn btn-pink" onclick="saveDossier()">Creer</button>
+      <button class="btn btn-outline" onclick="closeDossierModal()">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden file input for doc uploads -->
+<input type="file" id="doc-upload-input" style="display:none" accept=".pdf,.png,.jpg,.jpeg,.webp">
 
 <!-- ═══════ OVERVIEW ═══════ -->
 <div class="page {% if active_tab=='overview' %}active{% endif %}" id="pg-overview">
@@ -787,6 +1222,7 @@ function showPage(id,el){
   if(id==='overview')loadDashboard();if(id==='invoices')loadInvoices();
   if(id==='finances')loadBalances();if(id==='kpis')loadKPIs();
   if(id==='historique')refreshHistory();if(id==='admin')loadUsers();
+  if(id==='trips')loadTrips();
 }
 const api=(u,o)=>fetch(u,o).then(r=>r.json());
 const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
@@ -897,6 +1333,72 @@ function addUser(){const n=document.getElementById('new-user-name').value.trim()
 function removeUser(id){if(!confirm('Supprimer cet utilisateur?'))return;post('/api/auth/remove_user',{id}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Supprime','success');loadUsers();});}
 function toggleUser(id){post('/api/auth/toggle_user',{id}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Mis a jour','success');loadUsers();});}
 
+/* ════════════════════════════════════════════════════════ */
+/* ══════════ TRIPS & VISA MANAGEMENT MODULE ══════════════ */
+/* ════════════════════════════════════════════════════════ */
+let tripsData={persons:[],dossiers:[],stats:{},templates:{trip:[],visa:[]}};
+let tripsCurrentView='cards';
+let tripsCurrentDossierId=null;
+
+const DOC_ICONS={briefcase:'&#128188;',shield:'&#128737;',send:'&#9992;',mail:'&#9993;',home:'&#127968;',plane:'&#9992;',stamp:'&#128246;',book:'&#128218;',image:'&#128247;',file:'&#128196;',calendar:'&#128197;',dollar:'&#128181;'};
+
+function tripInitials(p){if(!p)return '?';const f=(p.first_name||'')[0]||'';const l=(p.last_name||'')[0]||'';return (f+l).toUpperCase()||'?';}
+function tripPersonName(p){if(!p)return 'Inconnu';return `${p.first_name||''} ${p.last_name||''}`.trim()||'Sans nom';}
+function tripPersonById(id){return tripsData.persons.find(p=>p.id===id);}
+
+function dossierProgress(dos){const docs=dos.documents||[];if(!docs.length)return {pct:0,done:0,total:0,inprog:0,pending:0};const done=docs.filter(d=>d.status==='completed').length;const inprog=docs.filter(d=>d.status==='in_progress').length;const pending=docs.filter(d=>d.status==='pending').length;return {pct:Math.round(100*done/docs.length),done,total:docs.length,inprog,pending};}
+function dossierStatus(pct){if(pct>=100)return 'ready';if(pct<30)return 'critical';return 'progress';}
+function dossierDeadlineDays(dos){if(!dos.deadline)return null;const parts=dos.deadline.split('-');if(parts.length!==3)return null;const d=new Date(+parts[0],+parts[1]-1,+parts[2]);const today=new Date();today.setHours(0,0,0,0);return Math.round((d-today)/86400000);}
+
+async function loadTrips(){try{const d=await api('/api/trips/overview');tripsData=d;renderTripsStats();populateTripsFilters();tripsRender();}catch(e){toast('Erreur chargement: '+e,'error');}}
+
+function renderTripsStats(){const s=tripsData.stats||{};document.getElementById('trips-stats').innerHTML=`
+  <div class="trips-stat"><div class="icon-wrap pink"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/></svg></div><div class="stat-content"><div class="num">${s.total_persons||0}</div><div class="lbl">Personnes</div></div></div>
+  <div class="trips-stat"><div class="icon-wrap blue"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><div class="stat-content"><div class="num">${s.total_dossiers||0}</div><div class="lbl">Dossiers</div></div></div>
+  <div class="trips-stat"><div class="icon-wrap green"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></div><div class="stat-content"><div class="num">${s.ready_dossiers||0}</div><div class="lbl">Prets</div></div></div>
+  <div class="trips-stat"><div class="icon-wrap amber"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div class="stat-content"><div class="num">${s.in_progress_dossiers||0}</div><div class="lbl">En cours</div></div></div>
+  <div class="trips-stat"><div class="icon-wrap red"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="stat-content"><div class="num">${s.urgent_dossiers||0}</div><div class="lbl">Urgents</div></div></div>
+  <div class="trips-stat"><div class="icon-wrap pink"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div><div class="stat-content"><div class="num">${s.progress_pct||0}%</div><div class="lbl">Progression globale</div></div></div>`;}
+
+function populateTripsFilters(){const sel=document.getElementById('trips-filter-person');const cur=sel.value;sel.innerHTML='<option value="">Toutes les personnes</option>'+tripsData.persons.map(p=>`<option value="${p.id}">${tripPersonName(p)}</option>`).join('');sel.value=cur;const psel=document.getElementById('dossier-person');if(psel){psel.innerHTML=tripsData.persons.map(p=>`<option value="${p.id}">${tripPersonName(p)}</option>`).join('')||'<option value="">-- Ajoutez une personne --</option>';}}
+
+function tripsSetView(view,el){tripsCurrentView=view;document.querySelectorAll('#trips-views button').forEach(b=>b.classList.remove('active'));if(el)el.classList.add('active');['cards','kanban','persons'].forEach(v=>{document.getElementById('trips-view-'+v).style.display=(v===view?'':'none');});tripsRender();}
+
+function getFilteredDossiers(){const q=(document.getElementById('trips-search').value||'').toLowerCase();const fp=document.getElementById('trips-filter-person').value;const ft=document.getElementById('trips-filter-type').value;const fs=document.getElementById('trips-filter-status').value;return tripsData.dossiers.filter(dos=>{if(fp&&dos.person_id!==fp)return false;if(ft&&dos.type!==ft)return false;const p=tripPersonById(dos.person_id);const name=tripPersonName(p).toLowerCase();if(q&&!name.includes(q)&&!(dos.title||'').toLowerCase().includes(q)&&!(dos.destination||'').toLowerCase().includes(q))return false;if(fs){const pct=dossierProgress(dos).pct;const st=dossierStatus(pct);if(st!==fs)return false;}return true;});}
+
+function tripsRender(){if(tripsCurrentView==='cards')renderTripsCards();else if(tripsCurrentView==='kanban')renderTripsKanban();else if(tripsCurrentView==='persons')renderPersons();}
+
+function renderTripsCards(){const el=document.getElementById('trips-cards-container');const list=getFilteredDossiers();if(!list.length){el.innerHTML=`<div class="empty-state" style="grid-column:1/-1;"><div class="empty-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></div><h3>Aucun dossier</h3><p>Commencez par ajouter une personne puis creez un dossier.</p><button class="btn btn-pink btn-sm" onclick="openDossierModal()">+ Nouveau Dossier</button></div>`;return;}el.innerHTML=list.map(dos=>{const p=tripPersonById(dos.person_id);const pr=dossierProgress(dos);const st=dossierStatus(pr.pct);const days=dossierDeadlineDays(dos);const urgent=days!==null&&days<=14&&days>=0&&pr.pct<100;return `<div class="trip-card status-${st}" onclick="openDrawer('${dos.id}')"><div class="card-top"><div class="person-avatar">${tripInitials(p)}</div><div class="person-info"><div class="name">${tripPersonName(p)}</div><div class="sub">${p&&(p.cin||p.passport)||''}</div></div><div class="type-badge ${dos.type}">${dos.type==='trip'?'Voyage':'Visa'}</div></div><div class="title">${dos.title||''}</div><div class="meta-row">${dos.destination?`<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>${dos.destination}</span>`:''}${dos.deadline?`<span class="${urgent?'deadline-urgent':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${dos.deadline}${urgent?' ('+days+'j)':''}</span>`:''}</div><div class="progress-wrap-big"><div class="progress-head"><span class="lbl">Progression</span><span class="val">${pr.pct}%</span></div><div class="pbar"><div class="pbar-fill" style="width:${pr.pct}%"></div></div></div><div class="doc-counts"><span><span class="dot g"></span>${pr.done} completes</span><span><span class="dot a"></span>${pr.inprog} en cours</span><span><span class="dot r"></span>${pr.pending} restants</span></div></div>`;}).join('');}
+
+function renderTripsKanban(){const list=getFilteredDossiers();const cols={todo:[],doing:[],done:[]};list.forEach(dos=>{const pct=dossierProgress(dos).pct;const st=dossierStatus(pct);const bucket=st==='critical'?'todo':(st==='ready'?'done':'doing');cols[bucket].push(dos);});Object.keys(cols).forEach(col=>{document.getElementById('k-count-'+col).textContent=cols[col].length;const body=document.getElementById('k-body-'+col);if(!cols[col].length){body.innerHTML='<div style="text-align:center;color:var(--muted);font-size:11px;padding:20px 10px;">Aucun dossier</div>';return;}body.innerHTML=cols[col].map(dos=>{const p=tripPersonById(dos.person_id);const pr=dossierProgress(dos);return `<div class="kanban-card" onclick="openDrawer('${dos.id}')"><div class="kc-top"><div class="kc-avatar">${tripInitials(p)}</div><div class="kc-name">${tripPersonName(p)}</div><span class="kc-type ${dos.type}">${dos.type==='trip'?'Voyage':'Visa'}</span></div><div class="kc-title">${dos.title||''}</div><div class="kc-pbar"><div class="kc-pbar-fill" style="width:${pr.pct}%"></div></div><div class="kc-foot"><span>${pr.done}/${pr.total} docs</span><span>${pr.pct}%</span></div></div>`;}).join('');});}
+
+function renderPersons(){const el=document.getElementById('persons-container');if(!tripsData.persons.length){el.innerHTML=`<div class="empty-state" style="grid-column:1/-1;"><div class="empty-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><h3>Aucune personne</h3><p>Ajoutez des personnes pour commencer a gerer leurs dossiers.</p><button class="btn btn-pink btn-sm" onclick="openPersonModal()">+ Ajouter Personne</button></div>`;return;}el.innerHTML=tripsData.persons.map(p=>{const trips=tripsData.dossiers.filter(d=>d.person_id===p.id&&d.type==='trip').length;const visas=tripsData.dossiers.filter(d=>d.person_id===p.id&&d.type==='visa').length;return `<div class="person-card"><div class="p-head"><div class="p-avatar">${tripInitials(p)}</div><div><div class="p-name">${tripPersonName(p)}</div><div class="p-cin">${p.cin||p.passport||''}</div></div></div><div class="p-body">${p.email?`<div class="row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>${p.email}</div>`:''}${p.phone?`<div class="row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>${p.phone}</div>`:''}${p.passport?`<div class="row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>${p.passport}</div>`:''}</div><div class="p-stats"><span class="s-trip">${trips} Voyage(s)</span><span class="s-visa">${visas} Visa(s)</span></div><div class="p-actions"><button class="btn btn-outline" onclick="editPerson('${p.id}')">Modifier</button><button class="btn btn-outline" onclick="openDossierModalFor('${p.id}')">+ Dossier</button><button class="btn btn-danger" onclick="deletePerson('${p.id}')">&#128465;</button></div></div>`;}).join('');}
+
+function openPersonModal(){document.getElementById('person-modal-title').textContent='Ajouter une Personne';document.getElementById('person-id').value='';['person-first','person-last','person-cin','person-passport','person-phone','person-email'].forEach(id=>document.getElementById(id).value='');document.getElementById('person-modal').classList.add('show');}
+function editPerson(id){const p=tripPersonById(id);if(!p)return;document.getElementById('person-modal-title').textContent='Modifier Personne';document.getElementById('person-id').value=p.id;document.getElementById('person-first').value=p.first_name||'';document.getElementById('person-last').value=p.last_name||'';document.getElementById('person-cin').value=p.cin||'';document.getElementById('person-passport').value=p.passport||'';document.getElementById('person-phone').value=p.phone||'';document.getElementById('person-email').value=p.email||'';document.getElementById('person-modal').classList.add('show');}
+function closePersonModal(){document.getElementById('person-modal').classList.remove('show');}
+function savePerson(){const id=document.getElementById('person-id').value;const body={first_name:document.getElementById('person-first').value.trim(),last_name:document.getElementById('person-last').value.trim(),cin:document.getElementById('person-cin').value.trim(),passport:document.getElementById('person-passport').value.trim(),phone:document.getElementById('person-phone').value.trim(),email:document.getElementById('person-email').value.trim()};if(!body.first_name&&!body.last_name){toast('Nom requis','error');return;}const url=id?'/api/trips/person/update':'/api/trips/person';if(id)body.id=id;post(url,body).then(d=>{if(d.error){toast(d.error,'error');return;}toast(id?'Personne mise a jour':'Personne ajoutee','success');closePersonModal();loadTrips();}).catch(e=>toast('Erreur: '+e,'error'));}
+function deletePerson(id){if(!confirm('Supprimer cette personne et tous ses dossiers?'))return;post('/api/trips/person/delete',{id}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Supprime','success');loadTrips();});}
+
+function openDossierModal(){if(!tripsData.persons.length){toast('Ajoutez d abord une personne','error');openPersonModal();return;}populateTripsFilters();['dossier-title','dossier-destination','dossier-deadline','dossier-notes'].forEach(id=>document.getElementById(id).value='');document.getElementById('dossier-type').value='trip';document.getElementById('dossier-modal').classList.add('show');}
+function openDossierModalFor(personId){openDossierModal();document.getElementById('dossier-person').value=personId;}
+function closeDossierModal(){document.getElementById('dossier-modal').classList.remove('show');}
+function saveDossier(){const body={person_id:document.getElementById('dossier-person').value,type:document.getElementById('dossier-type').value,title:document.getElementById('dossier-title').value.trim(),destination:document.getElementById('dossier-destination').value.trim(),deadline:document.getElementById('dossier-deadline').value,notes:document.getElementById('dossier-notes').value.trim()};if(!body.person_id){toast('Personne requise','error');return;}post('/api/trips/dossier',body).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Dossier cree','success');closeDossierModal();loadTrips().then(()=>openDrawer(d.dossier.id));}).catch(e=>toast('Erreur: '+e,'error'));}
+
+function openDrawer(id){const dos=tripsData.dossiers.find(d=>d.id===id);if(!dos)return;tripsCurrentDossierId=id;const p=tripPersonById(dos.person_id);document.getElementById('drawer-title').textContent=dos.title||(dos.type==='trip'?'Voyage':'Visa');document.getElementById('drawer-subtitle').innerHTML=`<strong>${tripPersonName(p)}</strong> &middot; ${dos.type==='trip'?'Voyage':'Visa'}${dos.destination?' &middot; '+dos.destination:''}`;document.getElementById('drawer-title-input').value=dos.title||'';document.getElementById('drawer-destination').value=dos.destination||'';document.getElementById('drawer-deadline').value=dos.deadline||'';document.getElementById('drawer-notes').value=dos.notes||'';const pr=dossierProgress(dos);document.getElementById('drawer-pct').innerHTML=pr.pct+'<span>%</span>';document.getElementById('drawer-progress-text').textContent=`${pr.done} / ${pr.total} documents completes`;document.getElementById('drawer-minibar').style.width=pr.pct+'%';renderDrawerDocs(dos);document.getElementById('drawer-overlay').classList.add('show');document.getElementById('dossier-drawer').classList.add('show');}
+function closeDrawer(){document.getElementById('drawer-overlay').classList.remove('show');document.getElementById('dossier-drawer').classList.remove('show');tripsCurrentDossierId=null;}
+
+function renderDrawerDocs(dos){const el=document.getElementById('drawer-doc-list');el.innerHTML=dos.documents.map(doc=>{const icon=DOC_ICONS[doc.icon]||'&#128196;';return `<div class="doc-item status-${doc.status}" id="doc-${doc.key}"><div class="doc-head"><div class="doc-icon">${icon}</div><div class="doc-name">${doc.name}${doc.file_name?`<span class="doc-file">&#128206; ${doc.file_name}</span>`:''}${doc.notes?`<span class="doc-note">${doc.notes}</span>`:''}</div><div class="doc-status"><button class="btn-pending ${doc.status==='pending'?'active':''}" onclick="setDocStatus('${doc.key}','pending')" title="Non demarre">&#9675;</button><button class="btn-progress ${doc.status==='in_progress'?'active':''}" onclick="setDocStatus('${doc.key}','in_progress')" title="En cours">&#9679;</button><button class="btn-done ${doc.status==='completed'?'active':''}" onclick="setDocStatus('${doc.key}','completed')" title="Termine">&#10003;</button><button class="upload-btn" onclick="uploadDoc('${doc.key}')" title="Uploader">&#11014;</button><button class="note-btn" onclick="toggleNote('${doc.key}')" title="Notes">&#9998;</button></div></div><div class="doc-note-input" id="note-${doc.key}"><textarea placeholder="Ajoutez une note..." onblur="saveDocNote('${doc.key}',this.value)">${doc.notes||''}</textarea></div></div>`;}).join('');}
+
+function setDocStatus(key,status){if(!tripsCurrentDossierId)return;post('/api/trips/document',{dossier_id:tripsCurrentDossierId,doc_key:key,status}).then(d=>{if(d.error){toast(d.error,'error');return;}const dos=tripsData.dossiers.find(x=>x.id===tripsCurrentDossierId);const doc=dos.documents.find(x=>x.key===key);Object.assign(doc,d.document);renderDrawerDocs(dos);const pr=dossierProgress(dos);document.getElementById('drawer-pct').innerHTML=pr.pct+'<span>%</span>';document.getElementById('drawer-progress-text').textContent=`${pr.done} / ${pr.total} documents completes`;document.getElementById('drawer-minibar').style.width=pr.pct+'%';tripsRender();loadTripsStatsOnly();});}
+function toggleNote(key){document.getElementById('note-'+key).classList.toggle('show');}
+function saveDocNote(key,value){if(!tripsCurrentDossierId)return;post('/api/trips/document',{dossier_id:tripsCurrentDossierId,doc_key:key,notes:value}).then(d=>{if(d.error){toast(d.error,'error');return;}const dos=tripsData.dossiers.find(x=>x.id===tripsCurrentDossierId);const doc=dos.documents.find(x=>x.key===key);Object.assign(doc,d.document);});}
+function uploadDoc(key){if(!tripsCurrentDossierId)return;const inp=document.getElementById('doc-upload-input');inp.onchange=function(){const f=this.files[0];if(!f)return;const fd=new FormData();fd.append('file',f);fd.append('dossier_id',tripsCurrentDossierId);fd.append('doc_key',key);fetch('/api/trips/document/upload',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Document telecharge','success');const dos=tripsData.dossiers.find(x=>x.id===tripsCurrentDossierId);const doc=dos.documents.find(x=>x.key===key);Object.assign(doc,d.document);renderDrawerDocs(dos);const pr=dossierProgress(dos);document.getElementById('drawer-pct').innerHTML=pr.pct+'<span>%</span>';document.getElementById('drawer-progress-text').textContent=`${pr.done} / ${pr.total} documents completes`;document.getElementById('drawer-minibar').style.width=pr.pct+'%';tripsRender();loadTripsStatsOnly();}).catch(e=>toast('Erreur: '+e,'error'));this.value='';};inp.click();}
+function saveDossierInfo(){if(!tripsCurrentDossierId)return;const body={id:tripsCurrentDossierId,title:document.getElementById('drawer-title-input').value,destination:document.getElementById('drawer-destination').value,deadline:document.getElementById('drawer-deadline').value,notes:document.getElementById('drawer-notes').value};post('/api/trips/dossier/update',body).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Sauvegarde','success');loadTrips();});}
+function duplicateDossier(){if(!tripsCurrentDossierId)return;if(!confirm('Dupliquer ce dossier?'))return;post('/api/trips/dossier/duplicate',{id:tripsCurrentDossierId}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Dossier duplique','success');closeDrawer();loadTrips();});}
+function deleteDossier(){if(!tripsCurrentDossierId)return;if(!confirm('Supprimer ce dossier?'))return;post('/api/trips/dossier/delete',{id:tripsCurrentDossierId}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Dossier supprime','success');closeDrawer();loadTrips();});}
+async function loadTripsStatsOnly(){try{const d=await api('/api/trips/overview');tripsData.stats=d.stats;renderTripsStats();}catch(e){}}
+
 /* ── Init ────────────────────────────────────────────────── */
 (function(){
   const t=new Date().toISOString().split('T')[0];const w=new Date(Date.now()+7*864e5).toISOString().split('T')[0];
@@ -906,6 +1408,8 @@ function toggleUser(id){post('/api/auth/toggle_user',{id}).then(d=>{if(d.error){
   const y=document.getElementById('att_ref_year'),c=document.getElementById('att_ref_counter');
   if(y&&c){y.addEventListener('change',updateRefPreview);c.addEventListener('change',updateRefPreview);}
   api('/api/ai/status').then(d=>{const el=document.getElementById('ai-status');if(el){el.textContent=d.available?'Active':'Non configure';el.style.color=d.available?'var(--green)':'var(--red)';}}).catch(()=>{});
+  // Auto-load trips page if it is the active tab
+  if(document.getElementById('pg-trips')&&document.getElementById('pg-trips').classList.contains('active')){loadTrips();}
 })();
 </script>
 </body>

@@ -33,6 +33,7 @@ from financial_store import InvoiceStore, BalanceStore, PaymentStore, ExchangeRa
 from invoice_processor import process_invoice, generate_ai_insights
 from kpi_engine import compute_all_kpis, get_cashflow_timeseries, get_status_distribution
 from auth import UserStore, login_required, admin_required
+from trips_store import TripsStore, TRIP_DOCS, VISA_DOCS
 
 # ---------------------------------------------------------------------------
 # Flask app
@@ -64,6 +65,7 @@ bal_store = BalanceStore()
 pay_store = PaymentStore()
 fx_rates = ExchangeRates()
 user_store = UserStore()
+trips_store = TripsStore()
 
 # ---------------------------------------------------------------------------
 # Cloud URL normalizer (exact copy of desktop)
@@ -679,6 +681,129 @@ def api_finance_exchange_rate():
 @login_required
 def api_ai_status():
     return jsonify({'available': bool(os.environ.get('ANTHROPIC_API_KEY', '').strip())})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TRIPS & VISA MANAGEMENT API (all protected)
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route('/api/trips/overview')
+@login_required
+def api_trips_overview():
+    return jsonify({
+        'persons': trips_store.list_persons(),
+        'dossiers': trips_store.list_dossiers(),
+        'stats': trips_store.get_overview(),
+        'templates': {'trip': TRIP_DOCS, 'visa': VISA_DOCS},
+    })
+
+
+@app.route('/api/trips/page')
+@login_required
+def trips_page():
+    return render_template('app.html', **_ctx('trips'))
+
+
+@app.route('/api/trips/person', methods=['POST'])
+@login_required
+def api_trips_add_person():
+    data = request.get_json(force=True)
+    if not (data.get('first_name') or data.get('last_name')):
+        return jsonify({'error': 'Nom requis'}), 400
+    return jsonify({'status': 'ok', 'person': trips_store.add_person(data)})
+
+
+@app.route('/api/trips/person/update', methods=['POST'])
+@login_required
+def api_trips_update_person():
+    data = request.get_json(force=True)
+    pid = data.pop('id', '')
+    result = trips_store.update_person(pid, data)
+    if result is None:
+        return jsonify({'error': 'Personne non trouvee'}), 404
+    return jsonify({'status': 'ok', 'person': result})
+
+
+@app.route('/api/trips/person/delete', methods=['POST'])
+@login_required
+def api_trips_delete_person():
+    data = request.get_json(force=True)
+    if trips_store.delete_person(data.get('id', '')):
+        return jsonify({'status': 'ok'})
+    return jsonify({'error': 'Personne non trouvee'}), 404
+
+
+@app.route('/api/trips/dossier', methods=['POST'])
+@login_required
+def api_trips_add_dossier():
+    data = request.get_json(force=True)
+    if not data.get('person_id'):
+        return jsonify({'error': 'Personne requise'}), 400
+    return jsonify({'status': 'ok', 'dossier': trips_store.add_dossier(data)})
+
+
+@app.route('/api/trips/dossier/update', methods=['POST'])
+@login_required
+def api_trips_update_dossier():
+    data = request.get_json(force=True)
+    did = data.pop('id', '')
+    result = trips_store.update_dossier(did, data)
+    if result is None:
+        return jsonify({'error': 'Dossier non trouve'}), 404
+    return jsonify({'status': 'ok', 'dossier': result})
+
+
+@app.route('/api/trips/dossier/delete', methods=['POST'])
+@login_required
+def api_trips_delete_dossier():
+    data = request.get_json(force=True)
+    if trips_store.delete_dossier(data.get('id', '')):
+        return jsonify({'status': 'ok'})
+    return jsonify({'error': 'Dossier non trouve'}), 404
+
+
+@app.route('/api/trips/dossier/duplicate', methods=['POST'])
+@login_required
+def api_trips_duplicate_dossier():
+    data = request.get_json(force=True)
+    dup = trips_store.duplicate_dossier(
+        data.get('id', ''),
+        new_person_id=data.get('person_id') or None,
+    )
+    if dup is None:
+        return jsonify({'error': 'Dossier non trouve'}), 404
+    return jsonify({'status': 'ok', 'dossier': dup})
+
+
+@app.route('/api/trips/document', methods=['POST'])
+@login_required
+def api_trips_update_document():
+    data = request.get_json(force=True)
+    did = data.pop('dossier_id', '')
+    key = data.pop('doc_key', '')
+    result = trips_store.update_document(did, key, data)
+    if result is None:
+        return jsonify({'error': 'Document non trouve'}), 404
+    return jsonify({'status': 'ok', 'document': result})
+
+
+@app.route('/api/trips/document/upload', methods=['POST'])
+@login_required
+def api_trips_upload_document():
+    did = request.form.get('dossier_id', '')
+    key = request.form.get('doc_key', '')
+    f = request.files.get('file')
+    if not f or not f.filename:
+        return jsonify({'error': 'Aucun fichier fourni'}), 400
+    blob = f.read()
+    result = trips_store.update_document(did, key, {
+        'file_name': f.filename,
+        'file_size': len(blob),
+        'status': 'completed',
+    })
+    if result is None:
+        return jsonify({'error': 'Document non trouve'}), 404
+    return jsonify({'status': 'ok', 'document': result})
 
 
 # ---------------------------------------------------------------------------
