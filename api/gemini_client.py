@@ -1,13 +1,14 @@
 """
 Thin wrapper around Google's Gemini REST API.
 
-Handles embeddings (text-embedding-004) and chat completions
-(gemini-2.0-flash) via plain HTTPS requests - no SDK dependency.
+Handles embeddings (gemini-embedding-001) and chat completions
+(gemini-2.5-flash) via plain HTTPS requests - no SDK dependency.
 
 The API key falls back to the one provided by the project owner.
 Override by setting the GEMINI_API_KEY environment variable.
 """
 import os
+import time
 import requests
 
 GEMINI_API_KEY = os.environ.get(
@@ -27,36 +28,72 @@ def is_configured() -> bool:
     return bool(GEMINI_API_KEY)
 
 
+# ─── Rate-limit config ───────────────────────────────────────────────
+# gemini-embedding-001 free tier: ~1 500 RPM → ~25 RPS
+# We target ~12 RPS (80 ms gap) to stay comfortably under the burst limit.
+_EMBED_DELAY   = 0.08   # seconds between embedding requests
+_RETRY_MAX     = 6      # maximum retry attempts on 429
+_RETRY_BASE    = 2.0    # base wait in seconds (doubles each retry)
+
+
 # ─── Embeddings ──────────────────────────────────────────────────────
 def embed_text(text: str, task_type: str = 'RETRIEVAL_DOCUMENT') -> list:
-    """Embed a single text string and return its vector."""
+    """
+    Embed a single text string and return its vector.
+    Retries up to _RETRY_MAX times with exponential backoff on 429.
+    """
     url = f"{BASE_URL}/{EMBED_MODEL}:embedContent?key={GEMINI_API_KEY}"
     body = {
         'model': f'models/{EMBED_MODEL}',
         'content': {'parts': [{'text': (text or '')[:9000]}]},
         'taskType': task_type,
     }
-    r = requests.post(url, json=body, timeout=30)
-    r.raise_for_status()
-    return r.json()['embedding']['values']
+    wait = _RETRY_BASE
+    for attempt in range(_RETRY_MAX + 1):
+        try:
+            r = requests.post(url, json=body, timeout=30)
+            if r.status_code == 429:
+                # honour Retry-After header if present, otherwise back off
+                retry_after = float(r.headers.get('Retry-After', wait))
+                sleep_for = max(retry_after, wait)
+                if attempt < _RETRY_MAX:
+                    time.sleep(sleep_for)
+                    wait = min(wait * 2, 60)
+                    continue
+                r.raise_for_status()          # will raise after final attempt
+            r.raise_for_status()
+            return r.json()['embedding']['values']
+        except requests.exceptions.HTTPError:
+            raise
+        except Exception as e:
+            if attempt < _RETRY_MAX:
+                time.sleep(wait)
+                wait = min(wait * 2, 60)
+                continue
+            raise RuntimeError(f"embed_text failed after {_RETRY_MAX} retries: {e}")
+    raise RuntimeError("embed_text: exhausted retries")
 
 
 def embed_batch(texts: list, task_type: str = 'RETRIEVAL_DOCUMENT') -> list:
     """
-    Embed a list of texts, one request per item.
+    Embed a list of texts, one request per item with rate-limit throttling.
 
-    gemini-embedding-001 does not expose batchEmbedContents, so we
-    loop sequentially. Keep the caller's chunk count reasonable
-    (the RAG store batches ~100 at a time).
+    gemini-embedding-001 does not expose batchEmbedContents so we loop
+    sequentially. A small inter-request delay (_EMBED_DELAY) keeps us
+    well under the 1 500 RPM free-tier quota, and embed_text() retries
+    automatically on 429 with exponential back-off.
     """
     if not texts:
         return []
     out = []
-    for t in texts:
+    for i, t in enumerate(texts):
         try:
             out.append(embed_text(t, task_type=task_type))
         except Exception as e:
-            raise RuntimeError(f"Embedding failed on chunk {len(out)}: {e}")
+            raise RuntimeError(f"Embedding failed on chunk {i}: {e}")
+        # pace requests — skip the delay after the very last item
+        if i < len(texts) - 1:
+            time.sleep(_EMBED_DELAY)
     return out
 
 
