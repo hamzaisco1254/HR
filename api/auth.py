@@ -29,7 +29,42 @@ from flask import session, redirect, url_for, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 
 _TMP_PATH = os.path.join(tempfile.gettempdir(), 'hr_users.json')
-MAX_USERS = 5
+
+# Soft cap only — easy to raise later, not enforced on admin-created users
+# so the platform can scale beyond 5 team members.
+MAX_USERS = int(os.environ.get('MAX_USERS', '100'))
+
+# ── Password policy ─────────────────────────────────────────────────
+MIN_PASSWORD_LENGTH = 12
+
+
+def validate_password(password: str) -> None:
+    """Raise ValueError if the password does not meet the policy.
+
+    Rules:
+        - at least 12 characters
+        - contains at least 1 lowercase letter
+        - contains at least 1 uppercase letter
+        - contains at least 1 digit
+        - contains at least 1 special character
+    """
+    if not password or len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(
+            f"Le mot de passe doit contenir au moins {MIN_PASSWORD_LENGTH} caractères."
+        )
+    has_lower = any(c.islower() for c in password)
+    has_upper = any(c.isupper() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_special = any(not c.isalnum() for c in password)
+    missing = []
+    if not has_lower:   missing.append("une minuscule")
+    if not has_upper:   missing.append("une majuscule")
+    if not has_digit:   missing.append("un chiffre")
+    if not has_special: missing.append("un caractère spécial")
+    if missing:
+        raise ValueError(
+            "Le mot de passe doit contenir " + ", ".join(missing) + "."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -175,8 +210,7 @@ class UserStore:
         if not email_lower or not password:
             raise ValueError('Email et mot de passe requis.')
 
-        if len(password) < 6:
-            raise ValueError('Le mot de passe doit contenir au moins 6 caractères.')
+        validate_password(password)
 
         user = {
             'id': str(uuid.uuid4()),
@@ -216,8 +250,7 @@ class UserStore:
 
     def change_password(self, user_id: str, new_password: str) -> bool:
         """Change a user's password."""
-        if len(new_password) < 6:
-            raise ValueError('Le mot de passe doit contenir au moins 6 caractères.')
+        validate_password(new_password)
         for i, u in enumerate(self.users):
             if u['id'] == user_id:
                 u['password_hash'] = generate_password_hash(new_password)

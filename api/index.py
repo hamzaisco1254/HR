@@ -46,6 +46,8 @@ from auth import UserStore, login_required, admin_required
 from trips_store import TripsStore, TRIP_DOCS, VISA_DOCS
 from rag_store import RagStore, CATEGORIES as RAG_CATEGORIES
 from gemini_client import generate as gemini_generate, is_configured as gemini_configured
+from rate_limiter import rate_limit
+from audit_store import audit_store, audit
 
 # ---------------------------------------------------------------------------
 # Flask app
@@ -74,6 +76,22 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE']   = True   # HTTPS only
 
 # ── Security headers on every response ──────────────────────────────────
+# CSP note: 'unsafe-inline' is currently required because all templates
+# embed large inline <style> and <script> blocks. Future work should move
+# them to hashed external files so we can drop 'unsafe-inline'.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com data:; "
+    "img-src 'self' data: blob:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "object-src 'none'"
+)
+
 @app.after_request
 def _set_security_headers(resp):
     resp.headers['X-Content-Type-Options']    = 'nosniff'
@@ -81,7 +99,43 @@ def _set_security_headers(resp):
     resp.headers['Referrer-Policy']           = 'strict-origin-when-cross-origin'
     resp.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     resp.headers['Permissions-Policy']        = 'camera=(), microphone=(), geolocation=()'
+    resp.headers['Content-Security-Policy']   = _CSP
     return resp
+
+
+# ── CSRF defense (Origin/Referer check, no tokens) ─────────────────────
+# SameSite=Strict cookies already block cross-site POSTs in modern browsers.
+# This adds a defense-in-depth layer: every state-changing request MUST
+# carry an Origin (or Referer) header that matches the request Host.
+_UNSAFE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
+
+@app.before_request
+def _csrf_origin_check():
+    if request.method not in _UNSAFE_METHODS:
+        return None
+
+    # Allow health/webhook-style endpoints if ever added (none for now)
+    origin  = request.headers.get('Origin', '')
+    referer = request.headers.get('Referer', '')
+    host    = request.host
+
+    def _same_origin(url: str) -> bool:
+        if not url:
+            return False
+        try:
+            parsed = urlparse(url)
+            return parsed.netloc == host
+        except Exception:
+            return False
+
+    if _same_origin(origin) or _same_origin(referer):
+        return None
+
+    logger.warning('csrf_blocked method=%s path=%s origin=%r referer=%r',
+                   request.method, request.path, origin, referer)
+    if request.is_json or request.path.startswith('/api/'):
+        return jsonify({'error': 'Origine non autorisée (protection CSRF).'}), 403
+    return 'Origine non autorisée', 403
 
 _TMP = tempfile.gettempdir()
 _UPLOAD_DIR = os.path.join(_TMP, 'hr_uploads')
@@ -255,6 +309,7 @@ def _send_docx(buf: io.BytesIO, filename: str):
 # ═══════════════════════════════════════════════════════════════════
 
 @app.route('/login', methods=['GET', 'POST'])
+@rate_limit(tag='login', max_requests=5, window_seconds=300, by='ip')
 def login():
     if session.get('user_id'):
         return redirect(url_for('index'))
@@ -262,15 +317,29 @@ def login():
     if request.method == 'POST':
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
-        user = user_store.authenticate(email, password)
+        user      = user_store.authenticate(email, password)
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr) or ''
         if user:
-            session['user_id'] = user['id']
+            session['user_id']    = user['id']
             session['user_email'] = user['email']
-            session['user_name'] = user['name']
-            session['user_role'] = user['role']
+            session['user_name']  = user['name']
+            session['user_role']  = user['role']
             session.permanent = True
             app.permanent_session_lifetime = timedelta(hours=12)
+            logger.info('login_success user=%s ip=%s', user['email'], client_ip)
+            audit_store.record(
+                action='auth.login', actor_id=user['id'], actor_email=user['email'],
+                entity_type='user', entity_id=user['id'],
+                ip=client_ip, ok=True,
+            )
             return redirect(url_for('index'))
+        logger.warning('login_failed email=%s ip=%s', email, client_ip)
+        audit_store.record(
+            action='auth.login', actor_id='', actor_email=email,
+            entity_type='user', entity_id='',
+            ip=client_ip, ok=False,
+            details={'reason': 'invalid_credentials'},
+        )
         return render_template('login.html', error='Email ou mot de passe incorrect.')
 
     return render_template('login.html', error=None)
@@ -278,6 +347,14 @@ def login():
 
 @app.route('/logout')
 def logout():
+    uid   = session.get('user_id', '')
+    email = session.get('user_email', '')
+    if uid:
+        audit_store.record(
+            action='auth.logout', actor_id=uid, actor_email=email,
+            entity_type='user', entity_id=uid,
+            ip=request.headers.get('X-Forwarded-For', request.remote_addr) or '', ok=True,
+        )
     session.clear()
     return redirect(url_for('login'))
 
@@ -289,11 +366,31 @@ def logout():
 @app.route('/api/auth/users')
 @admin_required
 def api_auth_users():
-    return jsonify({'users': user_store.get_all_users(), 'max': 5})
+    from auth import MAX_USERS as _MAX
+    return jsonify({'users': user_store.get_all_users(), 'max': _MAX})
+
+
+@app.route('/admin/audit')
+@admin_required
+def admin_audit_page():
+    return render_template('audit.html')
+
+
+@app.route('/api/audit/list')
+@admin_required
+def api_audit_list():
+    """Return recent audit log entries (admin only)."""
+    limit = min(int(request.args.get('limit', 100) or 100), 500)
+    action_filter = (request.args.get('action') or '').strip()
+    return jsonify({
+        'entries': audit_store.list_recent(limit=limit, action_filter=action_filter),
+        'stats':   audit_store.stats(),
+    })
 
 
 @app.route('/api/auth/add_user', methods=['POST'])
 @admin_required
+@audit(action='user.create', entity='user', entity_arg='email')
 def api_auth_add_user():
     data = request.get_json(force=True)
     try:
@@ -309,6 +406,7 @@ def api_auth_add_user():
 
 @app.route('/api/auth/remove_user', methods=['POST'])
 @admin_required
+@audit(action='user.delete', entity='user', entity_arg='id')
 def api_auth_remove_user():
     data = request.get_json(force=True)
     try:
@@ -321,6 +419,7 @@ def api_auth_remove_user():
 
 @app.route('/api/auth/toggle_user', methods=['POST'])
 @admin_required
+@audit(action='user.toggle', entity='user', entity_arg='id')
 def api_auth_toggle_user():
     data = request.get_json(force=True)
     try:
@@ -334,6 +433,7 @@ def api_auth_toggle_user():
 
 @app.route('/api/auth/change_password', methods=['POST'])
 @login_required
+@audit(action='user.change_password', entity='user', entity_arg='id')
 def api_auth_change_password():
     data = request.get_json(force=True)
     target_id = data.get('id', session.get('user_id'))
@@ -629,6 +729,7 @@ def api_dashboard_data():
 
 @app.route('/api/invoice/upload', methods=['POST'])
 @login_required
+@rate_limit(tag='invoice_upload', max_requests=20, window_seconds=600, by='user')
 def api_invoice_upload():
     f = request.files.get('file')
     if not f or not f.filename:
@@ -666,6 +767,7 @@ def api_invoice_list():
 
 @app.route('/api/invoice/update', methods=['POST'])
 @login_required
+@audit(action='invoice.update', entity='invoice', entity_arg='id')
 def api_invoice_update():
     data = request.get_json(force=True)
     inv_id = data.pop('id', None)
@@ -677,6 +779,7 @@ def api_invoice_update():
 
 @app.route('/api/invoice/delete', methods=['POST'])
 @login_required
+@audit(action='invoice.delete', entity='invoice', entity_arg='id')
 def api_invoice_delete():
     data = request.get_json(force=True)
     if inv_store.delete_invoice(data.get('id', '')):
@@ -771,6 +874,7 @@ def api_trips_update_person():
 
 @app.route('/api/trips/person/delete', methods=['POST'])
 @login_required
+@audit(action='trips.person.delete', entity='person', entity_arg='id')
 def api_trips_delete_person():
     data = request.get_json(force=True)
     if trips_store.delete_person(data.get('id', '')):
@@ -800,6 +904,7 @@ def api_trips_update_dossier():
 
 @app.route('/api/trips/dossier/delete', methods=['POST'])
 @login_required
+@audit(action='trips.dossier.delete', entity='dossier', entity_arg='id')
 def api_trips_delete_dossier():
     data = request.get_json(force=True)
     if trips_store.delete_dossier(data.get('id', '')):
@@ -916,6 +1021,8 @@ def api_chat_documents():
 
 @app.route('/api/chat/upload', methods=['POST'])
 @login_required
+@rate_limit(tag='chat_upload', max_requests=10, window_seconds=3600, by='user')
+@audit(action='rag.upload', entity='rag_document')
 def api_chat_upload():
     if session.get('user_role') != 'admin':
         return jsonify({'error': 'Action reservee aux administrateurs'}), 403
@@ -942,6 +1049,7 @@ def api_chat_upload():
 
 @app.route('/api/chat/delete', methods=['POST'])
 @login_required
+@audit(action='rag.delete', entity='rag_document', entity_arg='id')
 def api_chat_delete():
     if session.get('user_role') != 'admin':
         return jsonify({'error': 'Action reservee aux administrateurs'}), 403
@@ -953,6 +1061,7 @@ def api_chat_delete():
 
 @app.route('/api/chat/query', methods=['POST'])
 @login_required
+@rate_limit(tag='chat_query', max_requests=30, window_seconds=60, by='user')
 def api_chat_query():
     data = request.get_json(force=True)
     question = (data.get('message') or '').strip()
@@ -1044,6 +1153,30 @@ def api_chat_query():
         'retrieved_chunks': len(results),
         'rag_mode':         rag_mode,
     })
+
+
+# ---------------------------------------------------------------------------
+# API versioning — register /api/v1/* aliases for every /api/* route.
+# Existing /api/* paths keep working (backward-compatible); new clients can
+# start calling /api/v1/* immediately. Future /api/v2/* can then diverge.
+# ---------------------------------------------------------------------------
+_versioned_routes = []
+for _rule in list(app.url_map.iter_rules()):
+    _path = str(_rule.rule)
+    if _path.startswith('/api/') and not _path.startswith('/api/v1/'):
+        _v1_path = '/api/v1' + _path[len('/api'):]
+        _view    = app.view_functions.get(_rule.endpoint)
+        if _view is None:
+            continue
+        app.add_url_rule(
+            _v1_path,
+            endpoint=f"{_rule.endpoint}__v1",
+            view_func=_view,
+            methods=list(_rule.methods - {'HEAD', 'OPTIONS'}),
+        )
+        _versioned_routes.append(_v1_path)
+
+logger.info('api_versioning registered %d /api/v1 aliases', len(_versioned_routes))
 
 
 # ---------------------------------------------------------------------------
