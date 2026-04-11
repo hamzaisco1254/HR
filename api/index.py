@@ -46,7 +46,7 @@ app = Flask(
     template_folder=os.path.join(_API_DIR, 'templates'),
 )
 app.secret_key = os.environ.get('SECRET_KEY', '***REDACTED***')
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 

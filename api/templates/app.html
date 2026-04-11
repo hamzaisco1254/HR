@@ -1268,7 +1268,7 @@ select{cursor:pointer;appearance:none;
         <div class="kb-upload-zone" id="kb-drop-zone" onclick="document.getElementById('kb-file-input').click();">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <div class="u-text">Glissez un document</div>
-          <div class="u-hint">PDF, DOCX, TXT &middot; max 15 Mo</div>
+          <div class="u-hint">PDF, DOCX, TXT &middot; max 50 Mo</div>
           <input type="file" id="kb-file-input" accept=".pdf,.docx,.txt,.md" style="display:none" onchange="kbUploadFile(this.files[0])">
         </div>
         <div class="kb-upload-form">
@@ -1770,7 +1770,7 @@ async function loadKnowledgeBase(){
 
 function kbUploadFile(file){
   if(!file||!chatIsAdmin)return;
-  if(file.size>15*1024*1024){toast('Fichier trop volumineux (max 15 Mo)','error');return;}
+  if(file.size>50*1024*1024){toast('Fichier trop volumineux (max 50 Mo)','error');return;}
   const cat=document.getElementById('kb-upload-category').value||'other';
   const wrap=document.getElementById('kb-uploading');
   const txt=document.getElementById('kb-uploading-text');
