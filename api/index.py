@@ -34,6 +34,8 @@ from invoice_processor import process_invoice, generate_ai_insights
 from kpi_engine import compute_all_kpis, get_cashflow_timeseries, get_status_distribution
 from auth import UserStore, login_required, admin_required
 from trips_store import TripsStore, TRIP_DOCS, VISA_DOCS
+from rag_store import RagStore, CATEGORIES as RAG_CATEGORIES
+from gemini_client import generate as gemini_generate, is_configured as gemini_configured
 
 # ---------------------------------------------------------------------------
 # Flask app
@@ -66,6 +68,7 @@ pay_store = PaymentStore()
 fx_rates = ExchangeRates()
 user_store = UserStore()
 trips_store = TripsStore()
+rag_store = RagStore()
 
 # ---------------------------------------------------------------------------
 # Cloud URL normalizer (exact copy of desktop)
@@ -804,6 +807,166 @@ def api_trips_upload_document():
     if result is None:
         return jsonify({'error': 'Document non trouve'}), 404
     return jsonify({'status': 'ok', 'document': result})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# MR HAMZA — AI HR LEGAL CHATBOT (RAG + Gemini)
+# ═══════════════════════════════════════════════════════════════════
+
+MR_HAMZA_SYSTEM_PROMPT = """Tu es Mr Hamza, un assistant IA expert en droit du travail, conseil juridique RH et politiques d'entreprise.
+
+IDENTITE:
+- Nom: Mr Hamza
+- Role: Conseiller juridique RH intelligent
+- Ton: Professionnel, precis, legalement prudent, structure
+
+REGLES ABSOLUES:
+1. Tu reponds UNIQUEMENT en te basant sur les extraits de documents fournis dans la section CONTEXTE.
+2. Si l'information n'est pas dans le contexte, dis clairement : "Je n'ai pas trouve d'information sur ce point dans les documents disponibles. Je vous recommande de consulter directement la convention collective ou un juriste RH."
+3. Cite TOUJOURS tes sources a la fin de ta reponse sous forme : **Sources :** nom_du_document (passage N)
+4. Ne JAMAIS inventer d'articles, de lois, de chiffres ou de clauses. Reste fidele aux extraits.
+5. Adapte la langue de ta reponse a celle de la question (francais, anglais, arabe). Par defaut francais.
+6. Structure tes reponses avec des listes a puces ou des sections claires lorsque c'est pertinent.
+7. Mentionne explicitement l'article, la section ou le chapitre si present dans les extraits.
+8. Si plusieurs sources traitent le meme sujet, compare-les et signale d'eventuelles contradictions entre la loi, la convention et les politiques internes.
+9. Termine toujours par un bref rappel : "_Ces informations sont fournies a titre indicatif et ne constituent pas un conseil juridique definitif._"
+
+STYLE:
+- Commence par une reponse directe a la question (1-2 phrases)
+- Developpe ensuite avec des points structures
+- Cite les sources
+- Ajoute le disclaimer final"""
+
+
+@app.route('/api/chat/status')
+@login_required
+def api_chat_status():
+    stats = rag_store.stats()
+    return jsonify({
+        'available': gemini_configured(),
+        'stats': stats,
+        'categories': RAG_CATEGORIES,
+        'is_admin': session.get('user_role') == 'admin',
+    })
+
+
+@app.route('/api/chat/documents')
+@login_required
+def api_chat_documents():
+    return jsonify({
+        'documents': rag_store.list_documents(),
+        'categories': RAG_CATEGORIES,
+    })
+
+
+@app.route('/api/chat/upload', methods=['POST'])
+@login_required
+def api_chat_upload():
+    if session.get('user_role') != 'admin':
+        return jsonify({'error': 'Action reservee aux administrateurs'}), 403
+    f = request.files.get('file')
+    category = request.form.get('category', 'other')
+    if not f or not f.filename:
+        return jsonify({'error': 'Aucun fichier fourni'}), 400
+    allowed = ('.pdf', '.docx', '.txt', '.md')
+    if not f.filename.lower().endswith(allowed):
+        return jsonify({'error': f"Format non supporte. Utilisez : {', '.join(allowed)}"}), 400
+    try:
+        blob = f.read()
+        if len(blob) > 15 * 1024 * 1024:
+            return jsonify({'error': 'Fichier trop volumineux (max 15 Mo)'}), 400
+        result = rag_store.add_document(f.filename, blob, category=category)
+        return jsonify({'status': 'ok', **result})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': f'Erreur : {e}'}), 500
+
+
+@app.route('/api/chat/delete', methods=['POST'])
+@login_required
+def api_chat_delete():
+    if session.get('user_role') != 'admin':
+        return jsonify({'error': 'Action reservee aux administrateurs'}), 403
+    data = request.get_json(force=True)
+    if rag_store.delete_document(data.get('id', '')):
+        return jsonify({'status': 'ok'})
+    return jsonify({'error': 'Document non trouve'}), 404
+
+
+@app.route('/api/chat/query', methods=['POST'])
+@login_required
+def api_chat_query():
+    data = request.get_json(force=True)
+    question = (data.get('message') or '').strip()
+    if not question:
+        return jsonify({'error': 'Question vide'}), 400
+    if len(question) > 2000:
+        question = question[:2000]
+
+    # Conversation memory (user-side, last N exchanges)
+    raw_history = data.get('history', []) or []
+    history = []
+    for m in raw_history[-10:]:
+        role = m.get('role', '')
+        if role in ('user', 'assistant', 'model'):
+            history.append({
+                'role': 'model' if role in ('assistant', 'model') else 'user',
+                'text': (m.get('text') or m.get('content') or '')[:3000],
+            })
+
+    # Retrieve top-k relevant chunks
+    results = rag_store.search(question, top_k=6)
+
+    # Build grounded context
+    if results:
+        context_blocks = []
+        for r in results:
+            context_blocks.append(
+                f"[SOURCE: {r['filename']} | Categorie: {r['category_label']} | Passage #{r['chunk_idx'] + 1}]\n{r['text']}"
+            )
+        context = '\n\n────────\n\n'.join(context_blocks)
+    else:
+        context = "(Aucun extrait pertinent trouve dans la base de connaissances)"
+
+    user_prompt = (
+        f"CONTEXTE (extraits des documents charges) :\n\n{context}\n\n"
+        f"═══════════════════════════════════\n\n"
+        f"QUESTION DE L'UTILISATEUR :\n{question}"
+    )
+
+    try:
+        answer = gemini_generate(
+            MR_HAMZA_SYSTEM_PROMPT,
+            user_prompt,
+            history=history,
+            temperature=0.25,
+            max_tokens=1800,
+        )
+    except Exception as e:
+        return jsonify({'error': f'Erreur IA : {e}'}), 500
+
+    # Build source list with previews (deduped by filename)
+    seen = set()
+    sources = []
+    for r in results:
+        if r['filename'] in seen:
+            continue
+        seen.add(r['filename'])
+        sources.append({
+            'filename': r['filename'],
+            'category': r['category_label'],
+            'score': round(float(r['score']), 3),
+            'preview': r['text'][:220] + ('...' if len(r['text']) > 220 else ''),
+        })
+        if len(sources) >= 4:
+            break
+
+    return jsonify({
+        'answer': answer,
+        'sources': sources,
+        'retrieved_chunks': len(results),
+    })
 
 
 # ---------------------------------------------------------------------------
