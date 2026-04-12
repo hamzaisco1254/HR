@@ -1,25 +1,25 @@
-"""Reference management system — exact replica of the desktop ReferenceManager.
+"""Reference management system — Postgres-backed.
 
-The desktop uses a SINGLE shared counter for both document types.
-year_prefix and counter can be set independently (AttestationTab does this
-before calling generate_reference()).
+The reference counter (year_prefix + counter) is stored in the
+kv_settings table (key='references') so it survives cold starts
+and redeployments.
 
-Storage: /tmp/hr_references.json (+ optional Vercel KV).
+Public API matches the legacy desktop ReferenceManager exactly.
 """
 import json
-import os
-import tempfile
 from datetime import datetime
 from typing import Optional, Dict
 
-_TMP_PATH = os.path.join(tempfile.gettempdir(), 'hr_references.json')
+import db
+
+
+_KV_KEY = 'references'
 
 
 class ReferenceManager:
-    """Manages document reference generation and persistence."""
+    """Manages document reference generation with Postgres persistence."""
 
-    def __init__(self, config_path: str = None):
-        self.config_path = config_path or _TMP_PATH
+    def __init__(self, **_):
         self.data = self._load_data()
 
     # ------------------------------------------------------------------
@@ -27,18 +27,13 @@ class ReferenceManager:
     # ------------------------------------------------------------------
 
     def _load_data(self) -> Dict:
-        kv = _kv_get('hr_references')
-        if kv:
-            return kv
-
-        if os.path.exists(self.config_path):
-            try:
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
-
-        return self._initialize_data()
+        row = db.one("SELECT value FROM kv_settings WHERE key = %s", (_KV_KEY,))
+        if row and isinstance(row.get('value'), dict):
+            return row['value']
+        # First-time init
+        data = self._initialize_data()
+        self._save_data(data)
+        return data
 
     def _initialize_data(self) -> Dict:
         return {
@@ -47,13 +42,25 @@ class ReferenceManager:
             'history': [],
         }
 
-    def _save_data(self):
-        _kv_set('hr_references', self.data)
+    def _save_data(self, data: Dict = None):
+        data = data or self.data
         try:
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                json.dump(self.data, f, indent=2, ensure_ascii=False)
-        except IOError as e:
+            db.execute(
+                """INSERT INTO kv_settings (key, value, updated_at)
+                   VALUES (%s, %s::jsonb, %s)
+                   ON CONFLICT (key) DO UPDATE
+                   SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at""",
+                (_KV_KEY, json.dumps(data, ensure_ascii=False, default=str),
+                 datetime.utcnow()),
+            )
+        except Exception as e:
             print(f"Warning: could not save references: {e}")
+
+    def _reload(self):
+        """Re-read from DB to get latest state (important for concurrent requests)."""
+        row = db.one("SELECT value FROM kv_settings WHERE key = %s", (_KV_KEY,))
+        if row and isinstance(row.get('value'), dict):
+            self.data = row['value']
 
     # ------------------------------------------------------------------
     # Public API  — matches desktop ReferenceManager exactly
@@ -61,6 +68,9 @@ class ReferenceManager:
 
     def generate_reference(self, year_prefix: Optional[int] = None) -> str:
         """Increment counter and return next reference string."""
+        # Re-read from DB to avoid stale state across serverless invocations
+        self._reload()
+
         if year_prefix is not None:
             self.data['year_prefix'] = year_prefix
 
@@ -72,34 +82,45 @@ class ReferenceManager:
             'generated_at': datetime.now().isoformat(),
         })
 
+        # Keep history manageable (last 200 entries)
+        if len(self.data.get('history', [])) > 200:
+            self.data['history'] = self.data['history'][-200:]
+
         self._save_data()
         return reference
 
     def get_next_reference(self) -> str:
         """Preview the next reference without modifying state."""
+        self._reload()
         return f"{self.data['year_prefix']}/{self.data['counter'] + 1:04d}"
 
     def set_counter(self, value: int):
+        self._reload()
         self.data['counter'] = value
         self._save_data()
 
     def set_year_prefix(self, year: int):
+        self._reload()
         self.data['year_prefix'] = year
         self._save_data()
 
     def reset_counter(self):
+        self._reload()
         self.data['counter'] = 0
         self._save_data()
 
     def get_last_reference(self) -> Optional[str]:
+        self._reload()
         if self.data.get('history'):
             return self.data['history'][-1]['reference']
         return None
 
     def get_counter(self) -> int:
+        self._reload()
         return self.data.get('counter', 0)
 
     def get_year_prefix(self) -> int:
+        self._reload()
         return self.data.get('year_prefix', datetime.now().year % 100)
 
     # ------------------------------------------------------------------
@@ -107,15 +128,14 @@ class ReferenceManager:
     # ------------------------------------------------------------------
 
     def get_all_references(self) -> Dict:
-        """Return data compatible with the references.html template."""
+        self._reload()
         history = self.data.get('history', [])
-        from datetime import datetime as dt
         parsed = []
         for item in history:
             try:
-                ts = dt.fromisoformat(item['generated_at'])
+                ts = datetime.fromisoformat(item['generated_at'])
             except (KeyError, ValueError):
-                ts = dt.now()
+                ts = datetime.now()
             parsed.append({
                 'type': item.get('type', 'attestation'),
                 'reference': item.get('reference', ''),
@@ -130,40 +150,3 @@ class ReferenceManager:
             'mission_current': mis[-1]['reference'] if mis else None,
             'history': parsed,
         }
-
-
-# ---------------------------------------------------------------------------
-# KV helpers
-# ---------------------------------------------------------------------------
-
-def _kv_get(key: str):
-    url = os.environ.get('KV_REST_API_URL')
-    token = os.environ.get('KV_REST_API_TOKEN')
-    if not url or not token:
-        return None
-    try:
-        import requests as _req
-        resp = _req.get(f"{url.rstrip('/')}/get/{key}",
-                        headers={'Authorization': f'Bearer {token}'}, timeout=3)
-        if resp.ok:
-            raw = resp.json().get('result')
-            if raw:
-                return json.loads(raw)
-    except Exception as e:
-        print(f"KV get error: {e}")
-    return None
-
-
-def _kv_set(key: str, value):
-    url = os.environ.get('KV_REST_API_URL')
-    token = os.environ.get('KV_REST_API_TOKEN')
-    if not url or not token:
-        return
-    try:
-        import requests as _req
-        _req.post(f"{url.rstrip('/')}/set/{key}",
-                  headers={'Authorization': f'Bearer {token}'},
-                  json={'value': json.dumps(value, ensure_ascii=False)},
-                  timeout=3)
-    except Exception as e:
-        print(f"KV set error: {e}")
