@@ -872,6 +872,9 @@ select{cursor:pointer;appearance:none;
   <a href="#" class="{% if active_tab=='chat' %}active{% endif %}" onclick="showPage('chat',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><circle cx="9" cy="11" r="1" fill="currentColor"/><circle cx="12" cy="11" r="1" fill="currentColor"/><circle cx="15" cy="11" r="1" fill="currentColor"/></svg>
     Mr Hamza <span style="background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;font-size:8px;padding:2px 6px;border-radius:10px;margin-left:auto;font-weight:800;letter-spacing:.5px;">IA</span></a>
+  <a href="#" onclick="showPage('email-agent',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+    Agent Email <span id="email-badge" style="display:none;background:var(--pink);color:#fff;font-size:9px;padding:2px 7px;border-radius:10px;margin-left:auto;font-weight:800;">0</span></a>
   <div class="sep"></div>
   <div class="sec">Finance & Intelligence</div>
   <a href="#" class="{% if active_tab=='overview' %}active{% endif %}" onclick="showPage('overview',this)">
@@ -1199,6 +1202,77 @@ select{cursor:pointer;appearance:none;
 <!-- Hidden file input for doc uploads -->
 <input type="file" id="doc-upload-input" style="display:none" accept=".pdf,.png,.jpg,.jpeg,.webp">
 
+<!-- ═══════ OUTLOOK EMAIL AGENT ═══════ -->
+<div class="page" id="pg-email-agent">
+  <div class="page-header">
+    <h2>Agent Email — Détection de Factures</h2>
+    <p>Connectez votre Outlook et laissez l'IA détecter automatiquement les factures dans vos emails</p>
+  </div>
+
+  <!-- Connection status -->
+  <div id="ea-status" style="margin-bottom:24px;">
+    <div class="card" style="padding:24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+      <div id="ea-status-icon" style="width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;background:var(--pink-soft);">📧</div>
+      <div style="flex:1;min-width:200px;">
+        <div id="ea-status-title" style="font-weight:700;font-size:15px;">Outlook non connecté</div>
+        <div id="ea-status-sub" style="font-size:12px;color:var(--text-sec);margin-top:2px;">Connectez votre compte pour activer la détection automatique</div>
+      </div>
+      <div id="ea-actions">
+        <button class="btn btn-primary" id="ea-connect-btn" onclick="eaConnect()">Connecter Outlook</button>
+        <button class="btn btn-outline" id="ea-disconnect-btn" onclick="eaDisconnect()" style="display:none;">Déconnecter</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scan controls -->
+  <div id="ea-scan-panel" style="display:none;margin-bottom:24px;">
+    <div class="card" style="padding:20px;">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div style="font-weight:700;font-size:14px;flex:1;">🔍 Scanner les emails récents</div>
+        <select class="select" id="ea-hours" style="width:auto;min-width:150px;">
+          <option value="24">Dernières 24h</option>
+          <option value="48" selected>Dernières 48h</option>
+          <option value="72">Dernières 72h</option>
+          <option value="168">Dernière semaine</option>
+        </select>
+        <button class="btn btn-primary" id="ea-scan-btn" onclick="eaScan()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-right:6px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Scanner
+        </button>
+      </div>
+      <div id="ea-scanning" style="display:none;margin-top:16px;padding:16px;background:var(--pink-soft);border-radius:var(--radius);text-align:center;">
+        <div style="font-size:13px;font-weight:600;color:var(--pink);">⏳ Analyse en cours... L'IA examine vos emails</div>
+        <div style="font-size:11px;color:var(--text-sec);margin-top:4px;">Cela peut prendre quelques secondes</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="ea-results" style="display:none;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <h3 style="margin:0;font-size:15px;font-weight:700;">Factures détectées</h3>
+      <span id="ea-count" class="badge" style="background:var(--pink);color:#fff;font-size:11px;padding:3px 10px;border-radius:12px;">0</span>
+    </div>
+    <div id="ea-list" style="display:grid;gap:12px;"></div>
+  </div>
+
+  <!-- Empty state -->
+  <div id="ea-empty" style="display:none;text-align:center;padding:60px 20px;">
+    <div style="font-size:48px;margin-bottom:12px;opacity:.3;">📬</div>
+    <div style="font-size:14px;font-weight:600;color:var(--text-sec);">Aucune facture détectée</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px;">Essayez d'élargir la période de scan</div>
+  </div>
+
+  <!-- Not configured state -->
+  <div id="ea-not-configured" style="display:none;text-align:center;padding:60px 20px;">
+    <div style="font-size:48px;margin-bottom:12px;">⚙️</div>
+    <div style="font-size:14px;font-weight:600;color:var(--text-sec);">Configuration requise</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px;max-width:400px;margin-left:auto;margin-right:auto;">
+      L'administrateur doit configurer les variables OUTLOOK_CLIENT_ID et OUTLOOK_CLIENT_SECRET dans Vercel pour activer cette fonctionnalité.
+    </div>
+  </div>
+</div>
+
 <!-- ═══════ MR HAMZA — AI CHATBOT ═══════ -->
 <div class="page {% if active_tab=='chat' %}active{% endif %}" id="pg-chat">
   <div class="page-header">
@@ -1509,6 +1583,7 @@ function showPage(id,el){
   if(id==='historique')refreshHistory();if(id==='admin')loadUsers();
   if(id==='trips')loadTrips();
   if(id==='chat')loadChat();
+  if(id==='email-agent')eaLoadStatus();
 }
 const api=(u,o)=>fetch(u,o).then(r=>r.json());
 const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
@@ -1796,6 +1871,136 @@ function deleteKbDoc(id){
     loadKnowledgeBase();
   });
 }
+
+/* ══════ OUTLOOK EMAIL AGENT ══════ */
+let eaConnected=false;
+function eaLoadStatus(){
+  api('/api/outlook/status').then(d=>{
+    if(!d.configured){
+      document.getElementById('ea-not-configured').style.display='block';
+      document.getElementById('ea-connect-btn').style.display='none';
+      return;
+    }
+    document.getElementById('ea-not-configured').style.display='none';
+    eaConnected=d.connected;
+    if(d.connected){
+      document.getElementById('ea-status-icon').textContent='✅';
+      document.getElementById('ea-status-title').textContent='Outlook connecté';
+      document.getElementById('ea-status-sub').textContent='Compte: '+(d.email||'—')+' · Connecté le '+(d.connected_at||'').slice(0,10);
+      document.getElementById('ea-connect-btn').style.display='none';
+      document.getElementById('ea-disconnect-btn').style.display='inline-flex';
+      document.getElementById('ea-scan-panel').style.display='block';
+    }else{
+      document.getElementById('ea-status-icon').textContent='📧';
+      document.getElementById('ea-status-title').textContent='Outlook non connecté';
+      document.getElementById('ea-status-sub').textContent='Connectez votre compte pour activer la détection automatique';
+      document.getElementById('ea-connect-btn').style.display='inline-flex';
+      document.getElementById('ea-disconnect-btn').style.display='none';
+      document.getElementById('ea-scan-panel').style.display='none';
+    }
+  }).catch(()=>{});
+}
+function eaConnect(){window.location.href='/api/outlook/connect';}
+function eaDisconnect(){
+  if(!confirm('Déconnecter votre compte Outlook?'))return;
+  post('/api/outlook/disconnect',{}).then(()=>{toast('Outlook déconnecté','success');eaLoadStatus();}).catch(e=>toast('Erreur: '+e,'error'));
+}
+function eaScan(){
+  const hours=document.getElementById('ea-hours').value;
+  const btn=document.getElementById('ea-scan-btn');
+  const scanning=document.getElementById('ea-scanning');
+  btn.disabled=true;scanning.style.display='block';
+  document.getElementById('ea-results').style.display='none';
+  document.getElementById('ea-empty').style.display='none';
+  post('/api/outlook/scan',{hours:parseInt(hours)}).then(d=>{
+    btn.disabled=false;scanning.style.display='none';
+    if(d.error){toast(d.error,'error');return;}
+    const invoices=d.invoices||[];
+    const badge=document.getElementById('email-badge');
+    if(invoices.length>0){
+      badge.textContent=invoices.length;badge.style.display='inline';
+    }else{badge.style.display='none';}
+    eaRenderResults(invoices);
+  }).catch(e=>{btn.disabled=false;scanning.style.display='none';toast('Erreur: '+e,'error');});
+}
+function eaRenderResults(invoices){
+  if(!invoices.length){
+    document.getElementById('ea-results').style.display='none';
+    document.getElementById('ea-empty').style.display='block';
+    return;
+  }
+  document.getElementById('ea-empty').style.display='none';
+  document.getElementById('ea-results').style.display='block';
+  document.getElementById('ea-count').textContent=invoices.length;
+  document.getElementById('ea-list').innerHTML=invoices.map(inv=>{
+    const conf=Math.round((inv.confidence||0)*100);
+    const confColor=conf>=80?'var(--ok)':conf>=60?'#f59e0b':'var(--pink)';
+    const sugg=inv.suggested||{};
+    return `<div class="card" style="padding:20px;">
+      <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:250px;">
+          <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${esc(inv.subject||'(Sans objet)')}</div>
+          <div style="font-size:12px;color:var(--text-sec);margin-bottom:8px;">
+            <strong>De:</strong> ${esc(inv.sender_name||'')} &lt;${esc(inv.sender_email||'')}&gt;
+            · <strong>Reçu:</strong> ${(inv.received_at||'').replace('T',' ').slice(0,16)}
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5;">
+            ${esc(inv.body_preview||'')}
+          </div>
+          ${inv.has_attachments?'<span style="font-size:11px;background:var(--surface);padding:3px 8px;border-radius:8px;">📎 Pièce(s) jointe(s)</span>':''}
+        </div>
+        <div style="text-align:right;min-width:160px;">
+          <div style="margin-bottom:8px;">
+            <span style="font-size:11px;color:var(--muted);">Confiance IA</span>
+            <div style="font-size:22px;font-weight:800;color:${confColor};">${conf}%</div>
+          </div>
+          ${sugg.supplier_name?`<div style="font-size:11px;color:var(--text-sec);"><strong>Fournisseur:</strong> ${esc(sugg.supplier_name)}</div>`:''}
+          ${sugg.amount?`<div style="font-size:11px;color:var(--text-sec);"><strong>Montant:</strong> ${sugg.amount} ${esc(sugg.currency||'')}</div>`:''}
+          <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn btn-primary btn-sm" onclick="eaImport('${esc(inv.email_id)}',this)" ${!inv.has_attachments?'disabled title="Pas de pièce jointe"':''}>
+              ✅ Importer
+            </button>
+            <button class="btn btn-outline btn-sm" onclick="this.closest('.card').remove()">✖ Ignorer</button>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:8px;font-style:italic;">${esc(inv.reason||'')}</div>
+    </div>`;
+  }).join('');
+}
+function eaImport(emailId,btn){
+  btn.disabled=true;btn.textContent='⏳ Import...';
+  post('/api/outlook/import',{email_id:emailId}).then(d=>{
+    if(d.error){toast(d.error,'error');btn.disabled=false;btn.textContent='✅ Importer';return;}
+    if(d.auto_created){
+      toast('Facture importée et ajoutée avec succès!','success');
+      btn.closest('.card').style.opacity='.4';
+      btn.textContent='✔ Importée';
+      // Update badge count
+      const badge=document.getElementById('email-badge');
+      const c=parseInt(badge.textContent||'0')-1;
+      if(c<=0){badge.style.display='none';}else{badge.textContent=c;}
+    }else{
+      toast('Extraction réussie mais ajout manuel requis','info');
+      btn.disabled=false;btn.textContent='✅ Importer';
+    }
+  }).catch(e=>{btn.disabled=false;btn.textContent='✅ Importer';toast('Erreur: '+e,'error');});
+}
+function esc(s){return String(s).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'})[c]);}
+
+// Check for OAuth callback params on page load
+(function(){
+  const p=new URLSearchParams(window.location.search);
+  if(p.get('outlook_connected')==='1'){
+    toast('Outlook connecté avec succès!','success');
+    history.replaceState(null,'','/');
+    setTimeout(()=>showPage('email-agent'),100);
+  }
+  if(p.get('outlook_error')){
+    toast('Erreur Outlook: '+p.get('outlook_error'),'error');
+    history.replaceState(null,'','/');
+  }
+})();
 
 /* Drop zone drag-n-drop */
 (function initKbDrop(){

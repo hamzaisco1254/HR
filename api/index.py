@@ -45,6 +45,7 @@ from kpi_engine import compute_all_kpis, get_cashflow_timeseries, get_status_dis
 from auth import UserStore, login_required, admin_required
 from trips_store import TripsStore, TRIP_DOCS, VISA_DOCS
 from rag_store import RagStore, CATEGORIES as RAG_CATEGORIES
+import outlook_agent
 from gemini_client import generate as gemini_generate, is_configured as gemini_configured
 from rate_limiter import rate_limit
 from audit_store import audit_store, audit
@@ -970,6 +971,118 @@ def api_trips_upload_document():
     if result is None:
         return jsonify({'error': 'Document non trouve'}), 404
     return jsonify({'status': 'ok', 'document': result})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# OUTLOOK AI AGENT — Email Invoice Scanner
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route('/api/outlook/status')
+@login_required
+def api_outlook_status():
+    return jsonify({
+        'configured': outlook_agent.is_configured(),
+        **outlook_agent.get_connection_status(),
+    })
+
+
+@app.route('/api/outlook/connect')
+@login_required
+def api_outlook_connect():
+    """Start OAuth2 flow — redirect user to Microsoft login."""
+    if not outlook_agent.is_configured():
+        return jsonify({'error': 'OUTLOOK_CLIENT_ID / OUTLOOK_CLIENT_SECRET non configurés.'}), 400
+    redirect_uri = request.host_url.rstrip('/') + '/api/outlook/callback'
+    state = session.get('user_id', '')[:16]
+    url = outlook_agent.get_auth_url(redirect_uri, state=state)
+    return redirect(url)
+
+
+@app.route('/api/outlook/callback')
+def api_outlook_callback():
+    """OAuth2 callback from Microsoft."""
+    code  = request.args.get('code', '')
+    error = request.args.get('error', '')
+    if error:
+        logger.warning('outlook_oauth_error: %s — %s', error, request.args.get('error_description', ''))
+        return redirect('/?outlook_error=' + quote(error))
+    if not code:
+        return redirect('/?outlook_error=no_code')
+    try:
+        redirect_uri = request.host_url.rstrip('/') + '/api/outlook/callback'
+        tokens = outlook_agent.exchange_code(code, redirect_uri)
+        # Extract user email from id_token if available
+        import base64 as _b64
+        email = ''
+        id_token = tokens.get('id_token', '')
+        if id_token:
+            try:
+                payload = id_token.split('.')[1]
+                payload += '=' * (4 - len(payload) % 4)
+                claims = json.loads(_b64.b64decode(payload))
+                email = claims.get('preferred_username', '') or claims.get('email', '')
+            except Exception:
+                pass
+        outlook_agent.save_tokens(tokens, user_email=email)
+        logger.info('outlook_connected email=%s', email)
+        return redirect('/?outlook_connected=1')
+    except Exception:
+        logger.exception('outlook_oauth_exchange_failed')
+        return redirect('/?outlook_error=token_exchange_failed')
+
+
+@app.route('/api/outlook/disconnect', methods=['POST'])
+@login_required
+@audit(action='outlook.disconnect', entity='outlook')
+def api_outlook_disconnect():
+    outlook_agent.clear_tokens()
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/outlook/scan', methods=['POST'])
+@login_required
+@rate_limit(tag='outlook_scan', max_requests=10, window_seconds=600, by='user')
+@audit(action='outlook.scan', entity='email')
+def api_outlook_scan():
+    """Scan recent emails for invoices using keyword + Gemini AI."""
+    data = request.get_json(silent=True) or {}
+    hours = min(int(data.get('hours', 48)), 168)  # max 7 days
+    try:
+        results = outlook_agent.scan_emails(hours=hours)
+        return jsonify({'status': 'ok', 'invoices': results, 'scanned_hours': hours})
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception:
+        logger.exception('outlook_scan_failed')
+        return jsonify({'error': 'Erreur lors du scan des emails.'}), 500
+
+
+@app.route('/api/outlook/import', methods=['POST'])
+@login_required
+@rate_limit(tag='outlook_import', max_requests=20, window_seconds=600, by='user')
+@audit(action='outlook.import', entity='invoice', entity_arg='email_id')
+def api_outlook_import():
+    """Import an invoice from an email attachment."""
+    data = request.get_json(force=True)
+    email_id = data.get('email_id', '')
+    if not email_id:
+        return jsonify({'error': 'email_id requis'}), 400
+    try:
+        result = outlook_agent.import_email_invoice(email_id)
+        # Auto-create invoice in DB if extraction succeeded
+        if result.get('ai_used') and result.get('extracted_fields'):
+            fields = result['extracted_fields']
+            fields['original_filename'] = result.get('original_filename', '')
+            fields['notes'] = f"Importé depuis Outlook (email)"
+            inv = inv_store.add_invoice(fields)
+            result['invoice'] = inv
+            result['auto_created'] = True
+        return jsonify(result)
+    except (RuntimeError, ValueError) as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception:
+        logger.exception('outlook_import_failed')
+        return jsonify({'error': "Erreur lors de l'import."}), 500
 
 
 # ═══════════════════════════════════════════════════════════════════
