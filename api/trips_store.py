@@ -1,18 +1,15 @@
 """
-Trips & Visa Management Store.
+Trips & Visa Management Store — Postgres-backed.
 
 Persists persons, dossiers (trip or visa), and per-dossier document
-checklists to a JSON file under config/trips.json.
-
-Each dossier tracks a dynamic checklist (status, notes, optional file
-metadata, timestamp) so the UI can render progress bars, kanban boards
-and multi-person overviews.
+checklists in Postgres tables: persons, dossiers, dossier_docs.
 """
 import json
-import os
 import uuid
 from datetime import datetime, date
+from typing import Optional
 
+import db
 
 # ─── Checklist templates ──────────────────────────────────────────────
 TRIP_DOCS = [
@@ -26,252 +23,279 @@ TRIP_DOCS = [
 ]
 
 VISA_DOCS = [
-    {"key": "passeport",         "name": "Passeport (copie)",        "icon": "book"},
-    {"key": "photo",             "name": "Photo",                    "icon": "image"},
-    {"key": "formulaire_visa",   "name": "Formulaire visa",          "icon": "file"},
-    {"key": "assurance",         "name": "Assurance",                "icon": "shield"},
-    {"key": "reservations",      "name": "Reservations (hotel+vol)", "icon": "calendar"},
-    {"key": "attestation_travail","name": "Attestation de travail",  "icon": "briefcase"},
-    {"key": "ordre_mission",     "name": "Ordre de mission",         "icon": "send"},
-    {"key": "preuve_financiere", "name": "Preuve financiere",        "icon": "dollar"},
+    {"key": "passeport",           "name": "Passeport (copie)",        "icon": "book"},
+    {"key": "photo",               "name": "Photo",                    "icon": "image"},
+    {"key": "formulaire_visa",     "name": "Formulaire visa",          "icon": "file"},
+    {"key": "assurance",           "name": "Assurance",                "icon": "shield"},
+    {"key": "reservations",        "name": "Reservations (hotel+vol)", "icon": "calendar"},
+    {"key": "attestation_travail", "name": "Attestation de travail",   "icon": "briefcase"},
+    {"key": "ordre_mission",       "name": "Ordre de mission",         "icon": "send"},
+    {"key": "preuve_financiere",   "name": "Preuve financiere",        "icon": "dollar"},
 ]
+
+
+def _new_id() -> str:
+    return uuid.uuid4().hex[:10]
+
+
+def _now() -> str:
+    return datetime.utcnow().isoformat(timespec='seconds')
 
 
 # ─── Store ────────────────────────────────────────────────────────────
 class TripsStore:
-    def __init__(self, path: str = None):
-        if path is None:
-            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            path = os.path.join(root, 'config', 'trips.json')
-        self.path = path
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        if not os.path.exists(path):
-            self._write({'persons': [], 'dossiers': []})
-
-    # -- io --------------------------------------------------------------
-    def _read(self) -> dict:
-        try:
-            with open(self.path, 'r', encoding='utf-8') as f:
-                d = json.load(f)
-                d.setdefault('persons', [])
-                d.setdefault('dossiers', [])
-                return d
-        except Exception:
-            return {'persons': [], 'dossiers': []}
-
-    def _write(self, data: dict) -> None:
-        try:
-            with open(self.path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
-
-    @staticmethod
-    def _now() -> str:
-        return datetime.now().isoformat(timespec='seconds')
-
-    @staticmethod
-    def _new_id() -> str:
-        return uuid.uuid4().hex[:10]
+    def __init__(self, **_):
+        pass  # schema bootstrapped by db_schema.py
 
     # -- persons ---------------------------------------------------------
     def list_persons(self) -> list:
-        return self._read()['persons']
+        rows = db.query("SELECT * FROM persons ORDER BY created_at DESC")
+        return [self._person_row(r) for r in rows]
 
-    def get_person(self, pid: str) -> dict | None:
-        for p in self.list_persons():
-            if p.get('id') == pid:
-                return p
-        return None
+    def get_person(self, pid: str) -> Optional[dict]:
+        row = db.one("SELECT * FROM persons WHERE id = %s", (pid,))
+        return self._person_row(row) if row else None
 
     def add_person(self, data: dict) -> dict:
-        d = self._read()
-        person = {
-            'id': self._new_id(),
-            'first_name': (data.get('first_name') or '').strip(),
-            'last_name': (data.get('last_name') or '').strip(),
-            'cin': (data.get('cin') or '').strip(),
-            'passport': (data.get('passport') or '').strip(),
-            'phone': (data.get('phone') or '').strip(),
-            'email': (data.get('email') or '').strip(),
-            'created_at': self._now(),
-        }
-        d['persons'].append(person)
-        self._write(d)
-        return person
+        pid = _new_id()
+        first = (data.get('first_name') or '').strip()
+        last  = (data.get('last_name') or '').strip()
+        name  = f"{first} {last}".strip() or (data.get('name') or '').strip()
+        db.execute(
+            """INSERT INTO persons (id, name, email, phone, passport_number, nationality, notes, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (pid, name,
+             (data.get('email') or '').strip(),
+             (data.get('phone') or '').strip(),
+             (data.get('passport') or data.get('cin') or '').strip(),
+             (data.get('nationality') or '').strip(),
+             (data.get('notes') or '').strip(),
+             datetime.utcnow()),
+        )
+        return self.get_person(pid) or {'id': pid}
 
-    def update_person(self, pid: str, patch: dict) -> dict | None:
-        d = self._read()
-        for p in d['persons']:
-            if p.get('id') == pid:
-                for k in ('first_name', 'last_name', 'cin', 'passport', 'phone', 'email'):
-                    if k in patch:
-                        p[k] = (patch.get(k) or '').strip()
-                self._write(d)
-                return p
-        return None
+    def update_person(self, pid: str, patch: dict) -> Optional[dict]:
+        sets, params = [], []
+        field_map = {
+            'first_name': 'name', 'last_name': 'name',  # handled specially
+            'email': 'email', 'phone': 'phone',
+            'passport': 'passport_number', 'cin': 'passport_number',
+            'nationality': 'nationality', 'notes': 'notes',
+        }
+        # Handle first/last name merge
+        if 'first_name' in patch or 'last_name' in patch:
+            existing = self.get_person(pid) or {}
+            first = (patch.get('first_name') or existing.get('first_name') or '').strip()
+            last  = (patch.get('last_name') or existing.get('last_name') or '').strip()
+            sets.append("name = %s"); params.append(f"{first} {last}".strip())
+
+        for src, col in field_map.items():
+            if col == 'name':
+                continue
+            if src in patch:
+                sets.append(f"{col} = %s"); params.append((patch[src] or '').strip())
+
+        if not sets:
+            return self.get_person(pid)
+        params.append(pid)
+        db.execute(f"UPDATE persons SET {', '.join(sets)} WHERE id = %s", tuple(params))
+        return self.get_person(pid)
 
     def delete_person(self, pid: str) -> bool:
-        d = self._read()
-        before = len(d['persons'])
-        d['persons'] = [p for p in d['persons'] if p.get('id') != pid]
-        # Cascade: remove dossiers for this person
-        d['dossiers'] = [x for x in d['dossiers'] if x.get('person_id') != pid]
-        self._write(d)
-        return len(d['persons']) < before
+        # CASCADE will clean up dossiers and dossier_docs
+        return db.execute("DELETE FROM persons WHERE id = %s", (pid,)) > 0
 
     # -- dossiers --------------------------------------------------------
     def list_dossiers(self) -> list:
-        return self._read()['dossiers']
+        rows = db.query("SELECT * FROM dossiers ORDER BY created_at DESC")
+        return [self._dossier_with_docs(r) for r in rows]
 
-    def get_dossier(self, did: str) -> dict | None:
-        for dos in self.list_dossiers():
-            if dos.get('id') == did:
-                return dos
-        return None
-
-    def _build_docs(self, dtype: str) -> list:
-        tmpl = TRIP_DOCS if dtype == 'trip' else VISA_DOCS
-        return [
-            {
-                'key': t['key'],
-                'name': t['name'],
-                'icon': t.get('icon', 'file'),
-                'status': 'pending',   # pending | in_progress | completed
-                'file_name': '',
-                'file_size': 0,
-                'notes': '',
-                'updated_at': '',
-            }
-            for t in tmpl
-        ]
+    def get_dossier(self, did: str) -> Optional[dict]:
+        row = db.one("SELECT * FROM dossiers WHERE id = %s", (did,))
+        return self._dossier_with_docs(row) if row else None
 
     def add_dossier(self, data: dict) -> dict:
-        d = self._read()
         dtype = data.get('type', 'trip')
         if dtype not in ('trip', 'visa'):
             dtype = 'trip'
-        dossier = {
-            'id': self._new_id(),
-            'person_id': data.get('person_id', ''),
-            'type': dtype,
-            'title': (data.get('title') or '').strip() or (
-                'Voyage' if dtype == 'trip' else 'Visa'),
-            'destination': (data.get('destination') or '').strip(),
-            'deadline': (data.get('deadline') or '').strip(),
-            'notes': (data.get('notes') or '').strip(),
-            'documents': self._build_docs(dtype),
-            'created_at': self._now(),
-            'updated_at': self._now(),
-        }
-        d['dossiers'].append(dossier)
-        self._write(d)
-        return dossier
+        did = _new_id()
+        now = datetime.utcnow()
+        title = (data.get('title') or '').strip() or ('Voyage' if dtype == 'trip' else 'Visa')
+        db.execute(
+            """INSERT INTO dossiers (id, person_id, type, destination, purpose,
+               start_date, end_date, status, priority, notes, created_at, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (did, data.get('person_id', ''), dtype,
+             (data.get('destination') or '').strip(),
+             title,
+             data.get('deadline') or None, None,
+             'draft', 'normal',
+             (data.get('notes') or '').strip(),
+             now, now),
+        )
+        # Seed checklist documents
+        tmpl = TRIP_DOCS if dtype == 'trip' else VISA_DOCS
+        for t in tmpl:
+            db.execute(
+                """INSERT INTO dossier_docs (id, dossier_id, doc_key, label, status, updated_at)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                (_new_id(), did, t['key'], t['name'], 'pending', now),
+            )
+        return self.get_dossier(did) or {'id': did}
 
-    def update_dossier(self, did: str, patch: dict) -> dict | None:
-        d = self._read()
-        for dos in d['dossiers']:
-            if dos.get('id') == did:
-                for k in ('title', 'destination', 'deadline', 'notes'):
-                    if k in patch:
-                        dos[k] = (patch.get(k) or '').strip()
-                dos['updated_at'] = self._now()
-                self._write(d)
-                return dos
-        return None
+    def update_dossier(self, did: str, patch: dict) -> Optional[dict]:
+        sets, params = [], []
+        for k in ('destination', 'notes'):
+            if k in patch:
+                sets.append(f"{k} = %s"); params.append((patch[k] or '').strip())
+        if 'title' in patch:
+            sets.append("purpose = %s"); params.append((patch['title'] or '').strip())
+        if 'deadline' in patch:
+            sets.append("start_date = %s"); params.append(patch['deadline'] or None)
+        if not sets:
+            return self.get_dossier(did)
+        sets.append("updated_at = %s"); params.append(datetime.utcnow())
+        params.append(did)
+        db.execute(f"UPDATE dossiers SET {', '.join(sets)} WHERE id = %s", tuple(params))
+        return self.get_dossier(did)
 
     def delete_dossier(self, did: str) -> bool:
-        d = self._read()
-        before = len(d['dossiers'])
-        d['dossiers'] = [x for x in d['dossiers'] if x.get('id') != did]
-        self._write(d)
-        return len(d['dossiers']) < before
+        return db.execute("DELETE FROM dossiers WHERE id = %s", (did,)) > 0
 
-    def duplicate_dossier(self, did: str, new_person_id: str = None) -> dict | None:
-        d = self._read()
-        src = None
-        for dos in d['dossiers']:
-            if dos.get('id') == did:
-                src = dos
-                break
+    def duplicate_dossier(self, did: str, new_person_id: str = None) -> Optional[dict]:
+        src = self.get_dossier(did)
         if not src:
             return None
-        dup = json.loads(json.dumps(src))
-        dup['id'] = self._new_id()
-        dup['created_at'] = self._now()
-        dup['updated_at'] = self._now()
-        dup['title'] = (dup.get('title') or '') + ' (Copie)'
-        if new_person_id:
-            dup['person_id'] = new_person_id
-        # Clear uploaded file references so the copy starts fresh on uploads
-        for doc in dup.get('documents', []):
-            doc['file_name'] = ''
-            doc['file_size'] = 0
-        d['dossiers'].append(dup)
-        self._write(d)
-        return dup
+        new_id = _new_id()
+        now = datetime.utcnow()
+        db.execute(
+            """INSERT INTO dossiers (id, person_id, type, destination, purpose,
+               start_date, end_date, status, priority, notes, created_at, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (new_id, new_person_id or src.get('person_id', ''),
+             src.get('type', 'trip'), src.get('destination', ''),
+             (src.get('title', '') or '') + ' (Copie)',
+             src.get('deadline') or None, None,
+             'draft', 'normal', src.get('notes', ''), now, now),
+        )
+        for doc in src.get('documents', []):
+            db.execute(
+                """INSERT INTO dossier_docs (id, dossier_id, doc_key, label, status, updated_at)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                (_new_id(), new_id, doc['key'], doc['name'], 'pending', now),
+            )
+        return self.get_dossier(new_id)
 
-    def update_document(self, did: str, key: str, patch: dict) -> dict | None:
-        d = self._read()
-        for dos in d['dossiers']:
-            if dos.get('id') != did:
-                continue
-            for doc in dos.get('documents', []):
-                if doc.get('key') == key:
-                    for k in ('status', 'notes', 'file_name', 'file_size'):
-                        if k in patch:
-                            doc[k] = patch[k]
-                    if doc.get('status') not in ('pending', 'in_progress', 'completed'):
-                        doc['status'] = 'pending'
-                    doc['updated_at'] = self._now()
-                    dos['updated_at'] = self._now()
-                    self._write(d)
-                    return doc
-        return None
+    def update_document(self, did: str, key: str, patch: dict) -> Optional[dict]:
+        sets, params = [], []
+        if 'status' in patch:
+            s = patch['status']
+            if s not in ('pending', 'in_progress', 'completed'):
+                s = 'pending'
+            sets.append("status = %s"); params.append(s)
+        if 'notes' in patch:
+            sets.append("notes = %s"); params.append(patch['notes'] or '')
+        if 'file_name' in patch:
+            sets.append("file_name = %s"); params.append(patch['file_name'] or '')
+        if 'file_size' in patch:
+            sets.append("file_size = %s"); params.append(int(patch.get('file_size') or 0))
+        if not sets:
+            return None
+        sets.append("updated_at = %s"); params.append(datetime.utcnow())
+        params.extend([did, key])
+        cnt = db.execute(
+            f"UPDATE dossier_docs SET {', '.join(sets)} WHERE dossier_id = %s AND doc_key = %s",
+            tuple(params),
+        )
+        if cnt == 0:
+            return None
+        db.execute("UPDATE dossiers SET updated_at = %s WHERE id = %s", (datetime.utcnow(), did))
+        row = db.one("SELECT * FROM dossier_docs WHERE dossier_id = %s AND doc_key = %s", (did, key))
+        return self._doc_row(row) if row else None
 
     # -- overview --------------------------------------------------------
     def get_overview(self) -> dict:
-        d = self._read()
-        persons = d['persons']
-        dossiers = d['dossiers']
-        total_docs = 0
-        done_docs = 0
-        ready_dossiers = 0
-        critical_dossiers = 0
-        in_progress_dossiers = 0
+        all_dossiers = self.list_dossiers()
+        persons_cnt = (db.one("SELECT COUNT(*) AS cnt FROM persons") or {}).get('cnt', 0)
+        total_docs = 0; done_docs = 0
+        ready = critical = in_prog = urgent = 0
         today = date.today()
-        urgent = 0
-        for dos in dossiers:
+        for dos in all_dossiers:
             docs = dos.get('documents', [])
-            n = len(docs)
-            done = sum(1 for x in docs if x.get('status') == 'completed')
-            total_docs += n
-            done_docs += done
+            n = len(docs); done = sum(1 for x in docs if x.get('status') == 'completed')
+            total_docs += n; done_docs += done
             pct = int(round(100 * done / n)) if n else 0
-            if pct >= 100:
-                ready_dossiers += 1
-            elif pct < 30:
-                critical_dossiers += 1
-            else:
-                in_progress_dossiers += 1
-            # Urgency: deadline within 14 days and not complete
+            if pct >= 100:    ready += 1
+            elif pct < 30:    critical += 1
+            else:             in_prog += 1
             dl = dos.get('deadline') or ''
             if pct < 100 and dl:
                 try:
-                    y, m, dd = [int(x) for x in dl.split('-')]
-                    delta = (date(y, m, dd) - today).days
-                    if 0 <= delta <= 14:
-                        urgent += 1
-                except Exception:
-                    pass
+                    delta = (date.fromisoformat(dl) - today).days
+                    if 0 <= delta <= 14: urgent += 1
+                except Exception: pass
         return {
-            'total_persons': len(persons),
-            'total_dossiers': len(dossiers),
-            'ready_dossiers': ready_dossiers,
-            'critical_dossiers': critical_dossiers,
-            'in_progress_dossiers': in_progress_dossiers,
-            'urgent_dossiers': urgent,
-            'total_documents': total_docs,
-            'completed_documents': done_docs,
+            'total_persons': persons_cnt,
+            'total_dossiers': len(all_dossiers),
+            'ready_dossiers': ready, 'critical_dossiers': critical,
+            'in_progress_dossiers': in_prog, 'urgent_dossiers': urgent,
+            'total_documents': total_docs, 'completed_documents': done_docs,
             'progress_pct': int(round(100 * done_docs / total_docs)) if total_docs else 0,
+        }
+
+    # -- row converters (keep legacy JSON shape) --------------------------
+    @staticmethod
+    def _person_row(r: dict) -> dict:
+        if not r: return {}
+        name = r.get('name', '')
+        parts = name.rsplit(' ', 1)
+        return {
+            'id': r['id'],
+            'first_name': parts[0] if parts else '',
+            'last_name': parts[1] if len(parts) > 1 else '',
+            'cin': r.get('passport_number', ''),
+            'passport': r.get('passport_number', ''),
+            'phone': r.get('phone', ''),
+            'email': r.get('email', ''),
+            'created_at': str(r.get('created_at') or ''),
+        }
+
+    def _dossier_with_docs(self, r: dict) -> dict:
+        if not r: return {}
+        did = r['id']
+        doc_rows = db.query(
+            "SELECT * FROM dossier_docs WHERE dossier_id = %s ORDER BY id",
+            (did,),
+        )
+        tmpl_lookup = {t['key']: t for t in TRIP_DOCS + VISA_DOCS}
+        documents = []
+        for d in doc_rows:
+            tmpl = tmpl_lookup.get(d.get('doc_key'), {})
+            documents.append(self._doc_row(d, tmpl))
+        return {
+            'id': did,
+            'person_id': r.get('person_id', ''),
+            'type': r.get('type', 'trip'),
+            'title': r.get('purpose', ''),
+            'destination': r.get('destination', ''),
+            'deadline': str(r.get('start_date') or ''),
+            'notes': r.get('notes', ''),
+            'documents': documents,
+            'created_at': str(r.get('created_at') or ''),
+            'updated_at': str(r.get('updated_at') or ''),
+        }
+
+    @staticmethod
+    def _doc_row(r: dict, tmpl: dict = None) -> dict:
+        if not r: return {}
+        tmpl = tmpl or {}
+        return {
+            'key': r.get('doc_key', ''),
+            'name': r.get('label', '') or tmpl.get('name', ''),
+            'icon': tmpl.get('icon', 'file'),
+            'status': r.get('status', 'pending'),
+            'file_name': r.get('file_name', ''),
+            'file_size': r.get('file_size') or 0,
+            'notes': r.get('notes', ''),
+            'updated_at': str(r.get('updated_at') or ''),
         }

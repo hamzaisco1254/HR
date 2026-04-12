@@ -20,3 +20,5 @@ config/references.json
 *.log
 .DS_Store
 Thumbs.db
+
+.env*.local

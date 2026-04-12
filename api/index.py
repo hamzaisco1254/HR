@@ -142,6 +142,21 @@ _UPLOAD_DIR = os.path.join(_TMP, 'hr_uploads')
 os.makedirs(_UPLOAD_DIR, exist_ok=True)
 
 # ---------------------------------------------------------------------------
+# Database bootstrap (idempotent: creates tables if missing, seeds admin)
+# ---------------------------------------------------------------------------
+import db as _db_module
+from db_schema import bootstrap as _db_bootstrap
+
+if _db_module.is_configured():
+    try:
+        _boot = _db_bootstrap()
+        logger.info('db_bootstrap result=%s', _boot)
+    except Exception:
+        logger.exception('db_bootstrap_failed')
+else:
+    logger.warning('No DATABASE_URL / POSTGRES_URL set — DB features will fail.')
+
+# ---------------------------------------------------------------------------
 # Singleton managers
 # ---------------------------------------------------------------------------
 

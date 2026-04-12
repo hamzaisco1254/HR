@@ -1,27 +1,18 @@
-"""Append-only audit log for user-initiated actions.
+"""Append-only audit log — Postgres-backed.
 
-Persisted to Vercel KV when available, otherwise to /tmp (ephemeral).
 Each entry captures the actor, the action, the target entity, the
 client IP, and a short JSON payload of relevant details.
 
 Usage:
     from audit_store import audit_store, audit
 
-    # Manual logging
-    audit_store.record('user.login', actor_id='...', actor_email='...',
-                       entity_type='user', entity_id='...',
-                       ip='1.2.3.4', ok=True)
+    audit_store.record('user.login', actor_id='...', ...)
 
-    # Decorator usage (captures session user automatically)
     @audit(action='invoice.delete', entity='invoice')
     def api_invoice_delete():
         ...
-
-The KV list is capped at MAX_ENTRIES so it never grows unbounded.
 """
 import json
-import os
-import tempfile
 import uuid
 from datetime import datetime
 from functools import wraps
@@ -29,85 +20,14 @@ from typing import Any, Dict, List, Optional
 
 from flask import request, session, jsonify
 
-
-_KV_KEY       = 'hr_audit_log'
-_TMP_PATH     = os.path.join(tempfile.gettempdir(), 'hr_audit_log.json')
-MAX_ENTRIES   = 2000   # Keep recent 2k events; older ones rotate out
-PREVIEW_CHARS = 300    # Cap the details blob size per entry
+import db
 
 
-# ── KV helpers (same pattern used across the codebase) ──────────────
-
-def _kv_get() -> Optional[list]:
-    url   = (os.environ.get('KV_REST_API_URL') or '').rstrip('/')
-    token = os.environ.get('KV_REST_API_TOKEN') or ''
-    if not url or not token:
-        return None
-    try:
-        import requests as _req
-        r = _req.get(
-            f"{url}/get/{_KV_KEY}",
-            headers={'Authorization': f'Bearer {token}'},
-            timeout=2,
-        )
-        if r.ok:
-            raw = r.json().get('result')
-            if raw:
-                return json.loads(raw)
-    except Exception:
-        pass
-    return None
-
-
-def _kv_set(entries: list):
-    url   = (os.environ.get('KV_REST_API_URL') or '').rstrip('/')
-    token = os.environ.get('KV_REST_API_TOKEN') or ''
-    if not url or not token:
-        return
-    try:
-        import requests as _req
-        _req.post(
-            f"{url}/set/{_KV_KEY}",
-            headers={'Authorization': f'Bearer {token}'},
-            json={'value': json.dumps(entries, ensure_ascii=False)},
-            timeout=3,
-        )
-    except Exception:
-        pass
-
-
-# ── Audit store ─────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════
+# Audit store (Postgres)
+# ═══════════════════════════════════════════════════════════════════
 
 class AuditStore:
-    """In-memory cache of audit entries with KV + /tmp persistence."""
-
-    def __init__(self):
-        self.entries: List[Dict[str, Any]] = self._load()
-
-    def _load(self) -> List[Dict[str, Any]]:
-        kv = _kv_get()
-        if kv is not None:
-            return kv
-        if os.path.exists(_TMP_PATH):
-            try:
-                with open(_TMP_PATH, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return []
-
-    def _save(self):
-        # Cap size before saving
-        if len(self.entries) > MAX_ENTRIES:
-            self.entries = self.entries[-MAX_ENTRIES:]
-        _kv_set(self.entries)
-        try:
-            with open(_TMP_PATH, 'w', encoding='utf-8') as f:
-                json.dump(self.entries, f, ensure_ascii=False)
-        except IOError:
-            pass
-
-    # ── Record a single event ─────────────────────────────────────
     def record(
         self,
         action: str,
@@ -119,52 +39,68 @@ class AuditStore:
         ok: bool = True,
         details: Optional[Dict[str, Any]] = None,
     ):
-        payload = ''
+        detail_json = None
         if details:
             try:
-                payload = json.dumps(details, ensure_ascii=False)[:PREVIEW_CHARS]
+                detail_json = json.dumps(details, ensure_ascii=False, default=str)[:500]
             except Exception:
-                payload = str(details)[:PREVIEW_CHARS]
+                detail_json = str(details)[:500]
 
-        entry = {
-            'id':           uuid.uuid4().hex[:12],
-            'ts':           datetime.utcnow().isoformat(timespec='seconds') + 'Z',
-            'action':       action,
-            'actor_id':     actor_id,
-            'actor_email':  actor_email,
-            'entity_type':  entity_type,
-            'entity_id':    entity_id,
-            'ip':           ip,
-            'ok':           bool(ok),
-            'details':      payload,
-        }
-        self.entries.append(entry)
-        self._save()
+        try:
+            db.execute(
+                """INSERT INTO audit_log (id, ts, action, actor_id, actor_email,
+                   entity_type, entity_id, ip, ok, details)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)""",
+                (
+                    uuid.uuid4().hex[:12],
+                    datetime.utcnow(),
+                    action,
+                    actor_id or None,
+                    actor_email or None,
+                    entity_type or None,
+                    entity_id or None,
+                    ip or None,
+                    ok,
+                    detail_json,
+                ),
+            )
+        except Exception:
+            # Audit failures must never break the request
+            pass
 
-    # ── Queries ────────────────────────────────────────────────────
     def list_recent(self, limit: int = 100, action_filter: str = '') -> List[Dict[str, Any]]:
-        items = self.entries
         if action_filter:
-            items = [e for e in items if action_filter in e.get('action', '')]
-        return list(reversed(items[-limit:]))
+            rows = db.query(
+                "SELECT * FROM audit_log WHERE action ILIKE %s ORDER BY ts DESC LIMIT %s",
+                (f'%{action_filter}%', limit),
+            )
+        else:
+            rows = db.query(
+                "SELECT * FROM audit_log ORDER BY ts DESC LIMIT %s",
+                (limit,),
+            )
+        # Convert ts to ISO string for JSON serialisation
+        for r in rows:
+            if r.get('ts'):
+                r['ts'] = r['ts'].isoformat()
+            if r.get('details') and isinstance(r['details'], dict):
+                r['details'] = json.dumps(r['details'], ensure_ascii=False)
+        return rows
 
     def stats(self) -> Dict[str, Any]:
-        total = len(self.entries)
-        by_action: Dict[str, int] = {}
-        for e in self.entries[-500:]:
-            a = e.get('action', 'unknown')
-            by_action[a] = by_action.get(a, 0) + 1
-        return {
-            'total_entries':   total,
-            'recent_by_action': by_action,
-        }
+        total = (db.one("SELECT COUNT(*) AS cnt FROM audit_log") or {}).get('cnt', 0)
+        action_rows = db.query(
+            "SELECT action, COUNT(*) AS cnt FROM audit_log GROUP BY action ORDER BY cnt DESC LIMIT 15"
+        )
+        by_action = {r['action']: r['cnt'] for r in action_rows}
+        return {'total_entries': total, 'recent_by_action': by_action}
 
 
 # Module-level singleton
 audit_store = AuditStore()
 
 
-# ── Helpers to extract request context ──────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────
 
 def _current_ip() -> str:
     xff = request.headers.get('X-Forwarded-For', '') if request else ''
@@ -189,20 +125,11 @@ def _current_actor() -> Dict[str, str]:
 # ── Decorator for Flask routes ──────────────────────────────────────
 
 def audit(action: str, entity: str = '', entity_arg: str = ''):
-    """Flask route decorator that records an audit entry.
-
-    Args:
-        action: dotted action name, e.g. "invoice.delete"
-        entity: entity type label, e.g. "invoice"
-        entity_arg: request arg name to extract entity id from
-                    (checks POST json / form / query string / route kwarg)
-    """
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             entity_id = ''
             if entity_arg:
-                # Try route kwargs first, then JSON body, then form, then query
                 if entity_arg in kwargs:
                     entity_id = str(kwargs.get(entity_arg) or '')
                 else:
@@ -218,7 +145,6 @@ def audit(action: str, entity: str = '', entity_arg: str = ''):
             success = True
             try:
                 response = fn(*args, **kwargs)
-                # Flask returns (body, status) tuples sometimes
                 if isinstance(response, tuple) and len(response) >= 2:
                     status = response[1]
                     if isinstance(status, int) and status >= 400:
@@ -240,7 +166,6 @@ def audit(action: str, entity: str = '', entity_arg: str = ''):
                         ok=success,
                     )
                 except Exception:
-                    # Audit failures must never break the request
                     pass
         return wrapper
     return decorator
