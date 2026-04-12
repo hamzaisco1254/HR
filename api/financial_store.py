@@ -22,6 +22,10 @@ class InvoiceStore:
     def add_invoice(self, data: Dict) -> Dict:
         inv_id = str(uuid.uuid4())
         now = datetime.utcnow()
+        try:
+            amount = float(data.get('amount', 0))
+        except (ValueError, TypeError):
+            amount = 0.0
         db.execute(
             """INSERT INTO invoices (id, supplier_name, invoice_ref, invoice_date,
                due_date, amount, currency, payment_status, notes, created_at, updated_at)
@@ -30,9 +34,9 @@ class InvoiceStore:
                 inv_id,
                 data.get('supplier_name', ''),
                 data.get('invoice_ref', ''),
-                data.get('invoice_date') or None,
-                data.get('due_date') or None,
-                float(data.get('amount', 0)),
+                data.get('invoice_date') or None,   # '' → NULL for DATE
+                data.get('due_date') or None,        # '' → NULL for DATE
+                amount,
                 data.get('currency', 'TND'),
                 data.get('payment_status', 'unpaid'),
                 data.get('notes', ''),
@@ -70,10 +74,17 @@ class InvoiceStore:
     def update_invoice(self, invoice_id: str, updates: Dict) -> Optional[Dict]:
         allowed = ('supplier_name', 'invoice_ref', 'invoice_date', 'due_date',
                     'amount', 'currency', 'payment_status', 'notes')
+        # Fields that are DATE type in Postgres — empty string must become NULL
+        date_fields = ('invoice_date', 'due_date')
         sets = []
         params = []
         for k, v in updates.items():
             if k in allowed:
+                if k in date_fields:
+                    v = v if v else None  # '' → NULL for DATE columns
+                if k == 'amount':
+                    try: v = float(v)
+                    except (ValueError, TypeError): v = 0.0
                 sets.append(f"{k} = %s")
                 params.append(v)
         if not sets:
