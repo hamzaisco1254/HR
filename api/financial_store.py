@@ -128,18 +128,25 @@ class InvoiceStore:
     def _row(r: dict) -> dict:
         if not r:
             return {}
+        def _dt(v):
+            """Safely convert date/datetime to ISO string."""
+            if v is None:
+                return ''
+            if hasattr(v, 'isoformat'):
+                return v.isoformat()
+            return str(v)
         return {
             'id':              r.get('id', ''),
             'supplier_name':   r.get('supplier_name', ''),
             'invoice_ref':     r.get('invoice_ref', ''),
-            'invoice_date':    str(r.get('invoice_date') or ''),
-            'due_date':        str(r.get('due_date') or ''),
+            'invoice_date':    _dt(r.get('invoice_date')),
+            'due_date':        _dt(r.get('due_date')),
             'amount':          float(r.get('amount', 0)),
             'currency':        r.get('currency', 'TND'),
             'payment_status':  r.get('payment_status', 'unpaid'),
             'notes':           r.get('notes', ''),
-            'created_at':      (r.get('created_at') or ''),
-            'updated_at':      (r.get('updated_at') or ''),
+            'created_at':      _dt(r.get('created_at')),
+            'updated_at':      _dt(r.get('updated_at')),
         }
 
 
@@ -198,13 +205,14 @@ class BalanceStore:
     def _row(r: dict) -> dict:
         if not r:
             return {}
+        lu = r.get('last_updated')
         return {
             'id':         r.get('id', ''),
             'name':       r.get('account_name', ''),
             'type':       'bank',
             'currency':   r.get('currency', 'TND'),
             'balance':    float(r.get('balance', 0)),
-            'updated_at': str(r.get('last_updated') or ''),
+            'updated_at': lu.isoformat() if hasattr(lu, 'isoformat') else str(lu or ''),
         }
 
 
@@ -227,16 +235,19 @@ class PaymentStore:
              payment_date or datetime.utcnow().strftime('%Y-%m-%d'),
              '', invoice_id or None, datetime.utcnow()),
         )
-        return db.one("SELECT * FROM payments WHERE id = %s", (pay_id,)) or {}
+        row = db.one("SELECT * FROM payments WHERE id = %s", (pay_id,))
+        return self._row(row) if row else {}
 
     def get_for_invoice(self, invoice_id: str) -> List[Dict]:
-        return db.query(
+        rows = db.query(
             "SELECT * FROM payments WHERE invoice_id = %s ORDER BY payment_date DESC",
             (invoice_id,),
         )
+        return [self._row(r) for r in rows]
 
     def get_all(self) -> List[Dict]:
-        return db.query("SELECT * FROM payments ORDER BY payment_date DESC")
+        rows = db.query("SELECT * FROM payments ORDER BY payment_date DESC")
+        return [self._row(r) for r in rows]
 
     def total_payments_for_period(self, date_from: str = None,
                                   date_to: str = None) -> float:
@@ -248,6 +259,29 @@ class PaymentStore:
             sql += " AND payment_date <= %s"; params.append(date_to)
         row = db.one(sql, tuple(params))
         return float((row or {}).get('total', 0))
+
+    @staticmethod
+    def _row(r: dict) -> dict:
+        if not r:
+            return {}
+        def _dt(v):
+            if v is None: return ''
+            if hasattr(v, 'isoformat'): return v.isoformat()
+            return str(v)
+        return {
+            'id':            r.get('id', ''),
+            'invoice_id':    r.get('invoice_id', ''),
+            'account_name':  r.get('account_name', ''),
+            'amount':        float(r.get('amount', 0)),
+            'currency':      r.get('currency', 'TND'),
+            'direction':     r.get('direction', 'out'),
+            'description':   r.get('description', ''),
+            'payment_date':  _dt(r.get('payment_date')),
+            'reference':     r.get('reference', ''),
+            'method':        r.get('account_name', ''),
+            'notes':         r.get('description', ''),
+            'created_at':    _dt(r.get('created_at')),
+        }
 
 
 # ═══════════════════════════════════════════════════════════════════
