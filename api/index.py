@@ -865,7 +865,10 @@ def api_trips_overview():
 @app.route('/api/trips/page')
 @login_required
 def trips_page():
-    return render_template('app.html', **_ctx('trips'))
+    return jsonify({
+        'dossiers': trips_store.list_dossiers(),
+        'persons':  trips_store.list_persons(),
+    })
 
 
 @app.route('/api/trips/person', methods=['POST'])
