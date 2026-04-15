@@ -114,6 +114,26 @@ class TripsStore:
         row = db.one("SELECT * FROM dossiers WHERE id = %s", (did,))
         return self._dossier_with_docs(row) if row else None
 
+    def create_dossier_with_person(self, data: dict) -> dict:
+        """Simplified flow: create person + dossier in one call.
+
+        Accepts: person_name, person_email, person_phone, person_passport,
+                 type, destination, deadline, notes
+        Returns the dossier with embedded person info and doc checklist.
+        """
+        person_name = (data.get('person_name') or '').strip()
+        if not person_name:
+            raise ValueError("Nom de la personne requis.")
+        person_data = {
+            'name': person_name,
+            'email': (data.get('person_email') or '').strip(),
+            'phone': (data.get('person_phone') or '').strip(),
+            'passport': (data.get('person_passport') or '').strip(),
+        }
+        person = self.add_person(person_data)
+        data['person_id'] = person['id']
+        return self.add_dossier(data)
+
     def add_dossier(self, data: dict) -> dict:
         dtype = data.get('type', 'trip')
         if dtype not in ('trip', 'visa'):
@@ -272,15 +292,32 @@ class TripsStore:
         for d in doc_rows:
             tmpl = tmpl_lookup.get(d.get('doc_key'), {})
             documents.append(self._doc_row(d, tmpl))
+        # Embed person info
+        person_id = r.get('person_id', '')
+        person = {}
+        if person_id:
+            prow = db.one("SELECT * FROM persons WHERE id = %s", (person_id,))
+            if prow:
+                person = self._person_row(prow)
+
+        # Compute progress
+        total = len(documents)
+        done = sum(1 for d in documents if d.get('status') == 'completed')
+        progress = int(round(100 * done / total)) if total else 0
+
         return {
             'id': did,
-            'person_id': r.get('person_id', ''),
+            'person_id': person_id,
+            'person': person,
             'type': r.get('type', 'trip'),
             'title': r.get('purpose', ''),
             'destination': r.get('destination', ''),
             'deadline': str(r.get('start_date') or ''),
             'notes': r.get('notes', ''),
             'documents': documents,
+            'progress': progress,
+            'total_docs': total,
+            'completed_docs': done,
             'created_at': str(r.get('created_at') or ''),
             'updated_at': str(r.get('updated_at') or ''),
         }

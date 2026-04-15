@@ -900,11 +900,20 @@ def api_trips_delete_person():
 
 @app.route('/api/trips/dossier', methods=['POST'])
 @login_required
+@audit(action='trips.dossier.create', entity='dossier')
 def api_trips_add_dossier():
     data = request.get_json(force=True)
-    if not data.get('person_id'):
-        return jsonify({'error': 'Personne requise'}), 400
-    return jsonify({'status': 'ok', 'dossier': trips_store.add_dossier(data)})
+    try:
+        # New simplified flow: person info embedded in dossier creation
+        if data.get('person_name') and not data.get('person_id'):
+            dossier = trips_store.create_dossier_with_person(data)
+        elif data.get('person_id'):
+            dossier = trips_store.add_dossier(data)
+        else:
+            return jsonify({'error': 'Nom de la personne ou person_id requis'}), 400
+        return jsonify({'status': 'ok', 'dossier': dossier})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
 
 
 @app.route('/api/trips/dossier/update', methods=['POST'])
