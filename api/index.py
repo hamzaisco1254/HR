@@ -507,10 +507,10 @@ def attestation():
                 position=request.form.get('position', ''),
                 start_date=_parse_date(request.form.get('start_date', ''), datetime.now()),
             )
-            year = int(request.form.get('ref_year', ref_mgr.get_year_prefix()))
-            counter = int(request.form.get('ref_counter', ref_mgr.get_counter()))
-            ref_mgr.set_year_prefix(year)
-            ref_mgr.set_counter(counter)
+            # Auto-increment reference (year prefix from form if explicitly set)
+            year_from_form = request.form.get('ref_year', '')
+            if year_from_form:
+                ref_mgr.set_year_prefix(int(year_from_form))
             reference = ref_mgr.generate_reference()
             config = DocumentConfig(employee=employee, company=company,
                                     reference=reference, document_type='attestation')
