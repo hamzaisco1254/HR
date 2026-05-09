@@ -785,6 +785,12 @@ select{cursor:pointer;appearance:none;
 .kb-doc-item .d-del{position:absolute;top:8px;right:8px;background:none;border:none;
   cursor:pointer;color:var(--muted);padding:4px;border-radius:6px;transition:var(--transition);}
 .kb-doc-item .d-del:hover{background:var(--red-soft);color:var(--red);}
+.kb-doc-item.builtin{background:linear-gradient(135deg,var(--bg) 0%,var(--blue-soft,#eaf3ff) 100%);
+  border-color:var(--blue,#2563eb);}
+.kb-doc-item.builtin .d-icon{background:var(--blue-soft,#eaf3ff);color:var(--blue,#2563eb);}
+.kb-doc-item .d-builtin{display:inline-block;background:var(--blue,#2563eb);color:#fff;
+  padding:2px 7px;border-radius:10px;font-size:9px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.3px;margin-left:6px;vertical-align:middle;}
 
 .kb-empty{text-align:center;padding:30px 20px;color:var(--muted);font-size:11px;}
 .kb-empty svg{margin-bottom:8px;opacity:.3;}
@@ -1761,17 +1767,19 @@ async function loadKnowledgeBase(){
     el.innerHTML=list.map(doc=>{
       const sizeKb=Math.round((doc.size||0)/1024);
       const ext=(doc.filename||'').split('.').pop().toUpperCase();
-      return `<div class="kb-doc-item">
+      const isBuiltin=doc.is_builtin===true;
+      const displayName=doc.title||doc.filename;
+      return `<div class="kb-doc-item${isBuiltin?' builtin':''}">
         <div class="d-icon">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         </div>
-        <div class="d-name">${escHtml(doc.filename)}</div>
+        <div class="d-name">${escHtml(displayName)}${isBuiltin?' <span class="d-builtin" title="Reference integree, non supprimable">Reference interne</span>':''}</div>
         <div class="d-meta">
           <span class="d-cat">${escHtml(doc.category_label||CAT_LABELS[doc.category]||'Autre')}</span>
           <span>${doc.chunks} chunks</span>
           <span>${sizeKb} Ko</span>
         </div>
-        ${chatIsAdmin?`<button class="d-del" onclick="deleteKbDoc('${doc.id}')" title="Supprimer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>`:''}
+        ${chatIsAdmin&&!isBuiltin?`<button class="d-del" onclick="deleteKbDoc('${doc.id}')" title="Supprimer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>`:''}
       </div>`;
     }).join('');
   }catch(e){console.error(e);}

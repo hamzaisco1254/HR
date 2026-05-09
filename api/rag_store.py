@@ -7,10 +7,18 @@ for in-DB cosine similarity search).
 
 Until pgvector, we still compute cosine similarity in Python after
 loading the full embedding set — which is fine for < ~5000 chunks.
+
+Built-in reference documents (Code du travail, conventions collectives,
+etc.) are pre-embedded at build time and shipped as a gzipped JSON
+bundle (api/static_rag_bundle.json.gz). They are loaded once into
+memory at module import and merged with DB chunks at search time, so
+they are always available regardless of DB state.
 """
+import gzip
 import io
 import json
 import math
+import os
 import re
 import uuid
 from datetime import datetime
@@ -139,6 +147,75 @@ CATEGORIES = {
 }
 
 
+# ─── Static reference bundle ─────────────────────────────────────────
+# Pre-embedded documents shipped with the codebase. Loaded once at
+# import; merged with DB chunks in RagStore.search().
+
+_STATIC_BUNDLE_PATH = os.path.join(os.path.dirname(__file__), 'static_rag_bundle.json.gz')
+
+# Each item: {id, filename, title, category, size, chunk_count}
+_STATIC_DOCS: list = []
+# Each item: {doc_id, filename, category, idx, text, embedding}
+_STATIC_CHUNKS: list = []
+
+
+def _load_static_bundle() -> None:
+    """Load the gzipped JSON reference bundle into memory.
+
+    Silent no-op if the file is missing — lets local dev boot without
+    a built bundle. Logs a warning if the file is malformed so build
+    issues do not fail silently in production.
+    """
+    global _STATIC_DOCS, _STATIC_CHUNKS
+    if not os.path.exists(_STATIC_BUNDLE_PATH):
+        return
+    try:
+        with gzip.open(_STATIC_BUNDLE_PATH, 'rb') as f:
+            bundle = json.loads(f.read().decode('utf-8'))
+    except Exception as e:
+        print(f'[rag_store] failed to load static bundle: {e}')
+        return
+
+    docs = bundle.get('documents') or []
+    if not isinstance(docs, list):
+        return
+
+    for doc in docs:
+        doc_id = doc.get('id')
+        filename = doc.get('filename') or doc.get('title') or doc_id
+        category = doc.get('category', 'other')
+        if category not in CATEGORIES:
+            category = 'other'
+        chunks = doc.get('chunks') or []
+        if not doc_id or not chunks:
+            continue
+
+        _STATIC_DOCS.append({
+            'id':          doc_id,
+            'filename':    filename,
+            'title':       doc.get('title', filename),
+            'category':    category,
+            'size':        int(doc.get('size') or 0),
+            'chunk_count': len(chunks),
+        })
+        for ch in chunks:
+            emb = ch.get('embedding')
+            text = ch.get('text') or ''
+            if not isinstance(emb, list) or not text:
+                continue
+            _STATIC_CHUNKS.append({
+                'doc_id':    doc_id,
+                'filename':  filename,
+                'category':  category,
+                'idx':       int(ch.get('idx', 0)),
+                'text':      text,
+                'embedding': emb,
+            })
+
+
+_load_static_bundle()
+
+
 class RagStore:
     def __init__(self, **_):
         pass  # schema bootstrapped by db_schema.py
@@ -146,8 +223,23 @@ class RagStore:
     # -- Document management -----------------------------------------------
 
     def list_documents(self) -> list:
+        # Built-in references first (always present, non-deletable)
+        result = [
+            {
+                'id':             doc['id'],
+                'filename':       doc['filename'],
+                'title':          doc.get('title', doc['filename']),
+                'category':       doc['category'],
+                'category_label': CATEGORIES.get(doc['category'], 'Autre'),
+                'size':           doc.get('size', 0),
+                'chunks':         doc.get('chunk_count', 0),
+                'created_at':     '',
+                'is_builtin':     True,
+            }
+            for doc in _STATIC_DOCS
+        ]
+
         rows = db.query("SELECT * FROM rag_documents ORDER BY created_at DESC")
-        result = []
         for doc in rows:
             chunk_cnt = (db.one(
                 "SELECT COUNT(*) AS cnt FROM rag_chunks WHERE doc_id = %s", (doc['id'],)
@@ -160,6 +252,7 @@ class RagStore:
                 'size':           doc.get('size', 0),
                 'chunks':         chunk_cnt,
                 'created_at':     str(doc.get('created_at') or ''),
+                'is_builtin':     False,
             })
         return result
 
@@ -221,10 +314,14 @@ class RagStore:
             "SELECT category, COUNT(*) AS cnt FROM rag_documents GROUP BY category"
         )
         by_cat = {r['category']: r['cnt'] for r in cat_rows}
+        # Fold built-in references into the same totals
+        for d in _STATIC_DOCS:
+            by_cat[d['category']] = by_cat.get(d['category'], 0) + 1
         return {
-            'total_documents': doc_cnt,
-            'total_chunks':    chunk_cnt,
+            'total_documents': doc_cnt + len(_STATIC_DOCS),
+            'total_chunks':    chunk_cnt + len(_STATIC_CHUNKS),
             'by_category':     by_cat,
+            'builtin_documents': len(_STATIC_DOCS),
         }
 
     # -- Retrieval --------------------------------------------------------
@@ -264,11 +361,29 @@ class RagStore:
                     'chunk_idx':      r.get('idx', 0),
                     'text':           r.get('text', ''),
                     'score':          sim,
+                    'is_builtin':     False,
+                })
+
+        # Score built-in reference chunks against the same query embedding
+        for c in _STATIC_CHUNKS:
+            sim = cosine_similarity(q_emb, c['embedding'])
+            if sim >= threshold:
+                scored.append({
+                    'doc_id':         c['doc_id'],
+                    'filename':       c['filename'],
+                    'category':       c['category'],
+                    'category_label': CATEGORIES.get(c['category'], 'Autre'),
+                    'chunk_idx':      c['idx'],
+                    'text':           c['text'],
+                    'score':          sim,
+                    'is_builtin':     True,
                 })
 
         scored.sort(key=lambda x: x['score'], reverse=True)
         return scored[:top_k]
 
     def has_documents(self) -> bool:
+        if _STATIC_DOCS:
+            return True
         cnt = (db.one("SELECT COUNT(*) AS cnt FROM rag_documents") or {}).get('cnt', 0)
         return cnt > 0

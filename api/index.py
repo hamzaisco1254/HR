@@ -1194,7 +1194,10 @@ def api_chat_delete():
     if session.get('user_role') != 'admin':
         return jsonify({'error': 'Action reservee aux administrateurs'}), 403
     data = request.get_json(force=True)
-    if rag_store.delete_document(data.get('id', '')):
+    doc_id = (data.get('id') or '').strip()
+    if doc_id.startswith('builtin_'):
+        return jsonify({'error': 'Cette reference est integree et ne peut pas etre supprimee.'}), 400
+    if rag_store.delete_document(doc_id):
         return jsonify({'status': 'ok'})
     return jsonify({'error': 'Document non trouve'}), 404
 

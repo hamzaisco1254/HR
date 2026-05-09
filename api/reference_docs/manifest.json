@@ -1,0 +1,14 @@
+[
+  {
+    "id": "builtin_code_travail_tn",
+    "file": "code_du_travail_tn.pdf",
+    "title": "Code du Travail tunisien",
+    "category": "law"
+  },
+  {
+    "id": "builtin_convention_elec_2012",
+    "file": "convention_collective_electricite_electronique_2012.pdf",
+    "title": "Convention collective sectorielle — Électricité & Électronique (2012)",
+    "category": "convention"
+  }
+]
