@@ -1,0 +1,44 @@
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local environments
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Desktop-only artifacts (Vercel deploys the API only)
+build/
+dist/
+*.spec
+HR_Document_Generator.spec
+samples/
+icon_placeholder.txt
+
+# Local data files
+config/document_history.json
+config/rag.json
+config/trips.json
+config/references.json
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Git / CI metadata
+.git/
+.github/
+.claude/
+
+# Logs
+*.log
+
+# Source PDFs are kept (small) so the bundle can be rebuilt locally if needed
+# api/reference_docs/*.pdf  -- INTENTIONALLY NOT IGNORED
