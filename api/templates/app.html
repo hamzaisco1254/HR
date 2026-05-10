@@ -863,6 +863,20 @@ select{cursor:pointer;appearance:none;
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>
     Trips & Visa</a>
   <div class="sep"></div>
+  <div class="sec">Organisation</div>
+  <a href="#" onclick="showPage('clients',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><line x1="9" y1="9" x2="9" y2="9.01"/><line x1="9" y1="12" x2="9" y2="12.01"/><line x1="9" y1="15" x2="9" y2="15.01"/><line x1="9" y1="18" x2="9" y2="18.01"/></svg>
+    Clients</a>
+  <a href="#" onclick="showPage('departments',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    Departements</a>
+  <a href="#" onclick="showPage('employees',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+    Employes</a>
+  <a href="#" onclick="showPage('projects',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+    Projets</a>
+  <div class="sep"></div>
   <div class="sec">Assistant IA</div>
   <a href="#" class="{% if active_tab=='chat' %}active{% endif %}" onclick="showPage('chat',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><circle cx="9" cy="11" r="1" fill="currentColor"/><circle cx="12" cy="11" r="1" fill="currentColor"/><circle cx="15" cy="11" r="1" fill="currentColor"/></svg>
@@ -1242,6 +1256,161 @@ select{cursor:pointer;appearance:none;
   </div>
 </div>
 
+<!-- ═══════════ ORGANISATION — CLIENTS ═══════════ -->
+<div class="page" id="pg-clients">
+  <div class="page-header">
+    <h2>Clients</h2>
+    <p>Gerez vos clients commerciaux (interne et international)</p>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+    <button class="btn btn-pink" onclick="openClientModal()" id="org-add-client-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nouveau Client</button>
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);"><input type="checkbox" id="org-clients-show-inactive" onchange="loadClients()"> Inclure inactifs</label>
+    <span id="org-clients-count" style="margin-left:auto;font-size:11px;color:var(--muted);"></span>
+  </div>
+  <div id="org-clients-list"></div>
+</div>
+
+<!-- ═══════════ ORGANISATION — DEPARTEMENTS ═══════════ -->
+<div class="page" id="pg-departments">
+  <div class="page-header">
+    <h2>Departements</h2>
+    <p>Structure interne de l'entreprise</p>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
+    <button class="btn btn-pink" onclick="openDepartmentModal()" id="org-add-dept-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nouveau Departement</button>
+    <span id="org-departments-count" style="margin-left:auto;font-size:11px;color:var(--muted);"></span>
+  </div>
+  <div id="org-departments-list"></div>
+</div>
+
+<!-- ═══════════ ORGANISATION — EMPLOYES ═══════════ -->
+<div class="page" id="pg-employees">
+  <div class="page-header">
+    <h2>Employes</h2>
+    <p>Repertoire des employes <span id="org-emp-salary-hint" style="font-size:10px;color:var(--muted);font-weight:500;"></span></p>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+    <button class="btn btn-pink" onclick="openEmployeeModal()" id="org-add-emp-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nouvel Employe</button>
+    <select class="form-select" id="org-emp-filter-dept" onchange="loadEmployees()" style="max-width:220px;"><option value="">Tous departements</option></select>
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);"><input type="checkbox" id="org-emp-show-inactive" onchange="loadEmployees()"> Inclure inactifs</label>
+    <span id="org-employees-count" style="margin-left:auto;font-size:11px;color:var(--muted);"></span>
+  </div>
+  <div id="org-employees-list"></div>
+</div>
+
+<!-- ═══════════ ORGANISATION — PROJETS ═══════════ -->
+<div class="page" id="pg-projects">
+  <div class="page-header">
+    <h2>Projets</h2>
+    <p>Engagements clients porteurs de revenus</p>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+    <button class="btn btn-pink" onclick="openProjectModal()" id="org-add-proj-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nouveau Projet</button>
+    <select class="form-select" id="org-proj-filter-status" onchange="loadProjects()" style="max-width:180px;"><option value="">Tous statuts</option><option value="active">Actif</option><option value="paused">En pause</option><option value="closed">Termine</option></select>
+    <select class="form-select" id="org-proj-filter-client" onchange="loadProjects()" style="max-width:220px;"><option value="">Tous clients</option></select>
+    <span id="org-projects-count" style="margin-left:auto;font-size:11px;color:var(--muted);"></span>
+  </div>
+  <div id="org-projects-list"></div>
+</div>
+
+<!-- ═══════════ ORG MODALS ═══════════ -->
+<div class="modal-overlay" id="org-client-modal">
+  <div class="modal-box" style="max-width:560px;">
+    <h3 style="margin-bottom:20px;" id="org-client-modal-title">Nouveau Client</h3>
+    <input type="hidden" id="org-client-id">
+    <div class="grid2">
+      <div style="grid-column:1/-1;"><label>Nom *</label><input class="input" id="org-client-name" placeholder="ACME Germany GmbH"></div>
+      <div><label>Raison sociale</label><input class="input" id="org-client-legal-name"></div>
+      <div><label>ID TVA / Tax ID</label><input class="input" id="org-client-vat-id" placeholder="DE123456789"></div>
+      <div><label>Pays (ISO 2)</label><input class="input" id="org-client-country" placeholder="DE" maxlength="2" style="text-transform:uppercase;"></div>
+      <div><label>Devise par defaut</label><select class="form-select" id="org-client-currency"><option>EUR</option><option>TND</option><option>USD</option><option>GBP</option><option>CHF</option></select></div>
+      <div><label>Email</label><input type="email" class="input" id="org-client-email"></div>
+      <div><label>Telephone</label><input class="input" id="org-client-phone"></div>
+      <div style="grid-column:1/-1;"><label>Adresse</label><input class="input" id="org-client-address"></div>
+      <div style="grid-column:1/-1;"><label>Notes</label><input class="input" id="org-client-notes"></div>
+    </div>
+    <div style="margin-top:24px;display:flex;gap:10px;">
+      <button class="btn btn-pink" onclick="saveClient()" style="flex:1;">Sauvegarder</button>
+      <button class="btn btn-outline" onclick="closeOrgModal('org-client-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="org-department-modal">
+  <div class="modal-box" style="max-width:520px;">
+    <h3 style="margin-bottom:20px;" id="org-dept-modal-title">Nouveau Departement</h3>
+    <input type="hidden" id="org-dept-id">
+    <div class="grid2">
+      <div style="grid-column:1/-1;"><label>Nom *</label><input class="input" id="org-dept-name" placeholder="Developpement"></div>
+      <div><label>Code centre de cout</label><input class="input" id="org-dept-cost-center" placeholder="DEV-01"></div>
+      <div><label>Manager</label><select class="form-select" id="org-dept-manager"><option value="">-- Aucun --</option></select></div>
+      <div style="grid-column:1/-1;"><label>Notes</label><input class="input" id="org-dept-notes"></div>
+    </div>
+    <div style="margin-top:24px;display:flex;gap:10px;">
+      <button class="btn btn-pink" onclick="saveDepartment()" style="flex:1;">Sauvegarder</button>
+      <button class="btn btn-outline" onclick="closeOrgModal('org-department-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="org-employee-modal">
+  <div class="modal-box" style="max-width:680px;">
+    <h3 style="margin-bottom:20px;" id="org-emp-modal-title">Nouvel Employe</h3>
+    <input type="hidden" id="org-emp-id">
+    <div class="grid2">
+      <div style="grid-column:1/-1;"><label>Nom complet *</label><input class="input" id="org-emp-full-name" placeholder="Ahmed Ben Salah"></div>
+      <div><label>Matricule</label><input class="input" id="org-emp-matricule"></div>
+      <div><label>CIN</label><input class="input" id="org-emp-cin"></div>
+      <div><label>Email</label><input type="email" class="input" id="org-emp-email"></div>
+      <div><label>Telephone</label><input class="input" id="org-emp-phone"></div>
+      <div><label>Poste</label><input class="input" id="org-emp-position" placeholder="Developpeur senior"></div>
+      <div><label>Departement</label><select class="form-select" id="org-emp-dept"><option value="">-- Aucun --</option></select></div>
+      <div><label>Manager</label><select class="form-select" id="org-emp-manager"><option value="">-- Aucun --</option></select></div>
+      <div><label>Date debut</label><input type="date" class="input" id="org-emp-start-date"></div>
+      <div><label>Date fin</label><input type="date" class="input" id="org-emp-end-date"></div>
+      <div id="org-emp-salary-row"><label>Salaire mensuel brut</label><input type="number" step="0.01" min="0" class="input" id="org-emp-salary"></div>
+      <div id="org-emp-salary-cur-row"><label>Devise salaire</label><select class="form-select" id="org-emp-salary-cur"><option>TND</option><option>EUR</option><option>USD</option></select></div>
+      <div style="grid-column:1/-1;"><label>Notes</label><input class="input" id="org-emp-notes"></div>
+    </div>
+    <div style="margin-top:24px;display:flex;gap:10px;">
+      <button class="btn btn-pink" onclick="saveEmployee()" style="flex:1;">Sauvegarder</button>
+      <button class="btn btn-outline" onclick="closeOrgModal('org-employee-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="org-project-modal">
+  <div class="modal-box" style="max-width:680px;">
+    <h3 style="margin-bottom:20px;" id="org-proj-modal-title">Nouveau Projet</h3>
+    <input type="hidden" id="org-proj-id">
+    <div class="grid2">
+      <div><label>Code</label><input class="input" id="org-proj-code" placeholder="PRJ-2026-001"></div>
+      <div><label>Statut</label><select class="form-select" id="org-proj-status"><option value="active">Actif</option><option value="paused">En pause</option><option value="closed">Termine</option></select></div>
+      <div style="grid-column:1/-1;"><label>Nom *</label><input class="input" id="org-proj-name" placeholder="Plateforme ACME phase 2"></div>
+      <div style="grid-column:1/-1;"><label>Client *</label><select class="form-select" id="org-proj-client"></select></div>
+      <div style="grid-column:1/-1;"><label>Description</label><input class="input" id="org-proj-description"></div>
+      <div><label>Date debut</label><input type="date" class="input" id="org-proj-start-date"></div>
+      <div><label>Date fin</label><input type="date" class="input" id="org-proj-end-date"></div>
+      <div><label>Valeur contractuelle</label><input type="number" step="0.01" min="0" class="input" id="org-proj-contract-value"></div>
+      <div><label>Devise contrat</label><select class="form-select" id="org-proj-contract-currency"><option>EUR</option><option>TND</option><option>USD</option></select></div>
+      <div style="grid-column:1/-1;"><label>Notes</label><input class="input" id="org-proj-notes"></div>
+    </div>
+    <div style="margin-top:24px;display:flex;gap:10px;">
+      <button class="btn btn-pink" onclick="saveProject()" style="flex:1;">Sauvegarder</button>
+      <button class="btn btn-outline" onclick="closeOrgModal('org-project-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
+
 <!-- ═══════ MR HAMZA — AI CHATBOT ═══════ -->
 <div class="page {% if active_tab=='chat' %}active{% endif %}" id="pg-chat">
   <div class="page-header">
@@ -1553,6 +1722,10 @@ function showPage(id,el){
   if(id==='trips')loadTrips();
   if(id==='chat')loadChat();
   if(id==='email-agent')eaLoadStatus();
+  if(id==='clients')loadClients();
+  if(id==='departments')loadDepartments();
+  if(id==='employees')loadEmployees();
+  if(id==='projects')loadProjects();
 }
 const api=(u,o)=>fetch(u,o).then(r=>r.json());
 const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
@@ -2038,6 +2211,382 @@ function clearChat(){
   if(document.getElementById('pg-trips')&&document.getElementById('pg-trips').classList.contains('active')){loadTrips();}
   if(document.getElementById('pg-chat')&&document.getElementById('pg-chat').classList.contains('active')){loadChat();}
 })();
+
+/* ══════════════════════════════════════════════════════════════
+   ORGANISATION — Clients, Departments, Employees, Projects
+   ══════════════════════════════════════════════════════════════ */
+let _orgClients = [];
+let _orgDepts   = [];
+let _orgEmployees = [];
+let _orgCanSeeSalary = false;
+
+function closeOrgModal(id){const el=document.getElementById(id);if(el)el.classList.remove('show');}
+
+function _orgFmtMoney(n,cur){
+  if(n===null||n===undefined||n==='')return '';
+  const v=Number(n);if(isNaN(v))return '';
+  return v.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' '+(cur||'');
+}
+function _orgEmpty(msg,actionHtml){
+  return `<div class="empty-state"><div class="empty-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div><h3>${escHtml(msg)}</h3>${actionHtml||''}</div>`;
+}
+function _orgErr(p){return p?.then(r=>{if(r&&r.error){toast(r.error,'error',6000);return null;}return r;}).catch(e=>{toast('Erreur: '+e,'error',6000);return null;});}
+
+/* ── CLIENTS ─────────────────────────────────────────────── */
+async function loadClients(){
+  const inactive=document.getElementById('org-clients-show-inactive')?.checked?'1':'0';
+  const d=await api('/api/finance/clients?include_inactive='+inactive);
+  _orgClients=d.clients||[];
+  document.getElementById('org-clients-count').textContent=`${_orgClients.length} client${_orgClients.length!==1?'s':''}`;
+  const el=document.getElementById('org-clients-list');
+  if(!_orgClients.length){el.innerHTML=_orgEmpty('Aucun client');return;}
+  el.innerHTML=`<div style="overflow-x:auto;"><table class="tbl"><thead><tr><th>Nom</th><th>Pays</th><th>Devise</th><th>ID TVA</th><th>Email</th><th>Statut</th><th></th></tr></thead><tbody>`+
+    _orgClients.map(c=>`<tr>
+      <td><strong>${escHtml(c.name)}</strong>${c.legal_name?`<div style="font-size:10px;color:var(--muted);">${escHtml(c.legal_name)}</div>`:''}</td>
+      <td>${escHtml(c.country)}</td>
+      <td>${escHtml(c.default_currency)}</td>
+      <td>${escHtml(c.vat_id)||'—'}</td>
+      <td>${escHtml(c.email)||'—'}</td>
+      <td>${c.active?'<span style="color:var(--green);font-weight:700;">Actif</span>':'<span style="color:var(--muted);">Inactif</span>'}</td>
+      <td style="text-align:right;white-space:nowrap;">
+        <button class="btn btn-outline btn-sm" onclick="editClient('${c.id}')">Modifier</button>
+        ${c.active?`<button class="btn btn-outline btn-sm" onclick="deactivateClient('${c.id}')" title="Desactiver">Desactiver</button>`:''}
+        <button class="btn btn-danger btn-sm" onclick="deleteClient('${c.id}')" title="Supprimer">×</button>
+      </td>
+    </tr>`).join('')+`</tbody></table></div>`;
+}
+function openClientModal(){
+  ['org-client-id','org-client-name','org-client-legal-name','org-client-vat-id','org-client-country','org-client-email','org-client-phone','org-client-address','org-client-notes'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  document.getElementById('org-client-country').value='DE';
+  document.getElementById('org-client-currency').value='EUR';
+  document.getElementById('org-client-modal-title').textContent='Nouveau Client';
+  document.getElementById('org-client-modal').classList.add('show');
+}
+function editClient(id){
+  const c=_orgClients.find(x=>x.id===id);if(!c)return;
+  document.getElementById('org-client-id').value=c.id;
+  document.getElementById('org-client-name').value=c.name||'';
+  document.getElementById('org-client-legal-name').value=c.legal_name||'';
+  document.getElementById('org-client-vat-id').value=c.vat_id||'';
+  document.getElementById('org-client-country').value=c.country||'TN';
+  document.getElementById('org-client-currency').value=c.default_currency||'EUR';
+  document.getElementById('org-client-email').value=c.email||'';
+  document.getElementById('org-client-phone').value=c.phone||'';
+  document.getElementById('org-client-address').value=c.address||'';
+  document.getElementById('org-client-notes').value=c.notes||'';
+  document.getElementById('org-client-modal-title').textContent='Modifier Client';
+  document.getElementById('org-client-modal').classList.add('show');
+}
+async function saveClient(){
+  const id=document.getElementById('org-client-id').value;
+  const body={
+    name:document.getElementById('org-client-name').value,
+    legal_name:document.getElementById('org-client-legal-name').value,
+    vat_id:document.getElementById('org-client-vat-id').value,
+    country:document.getElementById('org-client-country').value,
+    default_currency:document.getElementById('org-client-currency').value,
+    email:document.getElementById('org-client-email').value,
+    phone:document.getElementById('org-client-phone').value,
+    address:document.getElementById('org-client-address').value,
+    notes:document.getElementById('org-client-notes').value,
+  };
+  const url=id?'/api/finance/clients/update':'/api/finance/clients';
+  if(id)body.id=id;
+  const r=await _orgErr(post(url,body));
+  if(!r||r.error)return;
+  toast(id?'Client mis a jour':'Client cree','success');
+  closeOrgModal('org-client-modal');
+  loadClients();
+}
+async function deactivateClient(id){
+  if(!confirm('Desactiver ce client ?'))return;
+  const r=await _orgErr(post('/api/finance/clients/deactivate',{id}));
+  if(r&&!r.error){toast('Client desactive','success');loadClients();}
+}
+async function deleteClient(id){
+  if(!confirm('Supprimer definitivement ce client ?\nCette action est irreversible.'))return;
+  const r=await _orgErr(post('/api/finance/clients/delete',{id}));
+  if(r&&!r.error){toast('Client supprime','success');loadClients();}
+}
+
+/* ── DEPARTMENTS ─────────────────────────────────────────── */
+async function loadDepartments(){
+  const d=await api('/api/finance/departments');
+  _orgDepts=d.departments||[];
+  document.getElementById('org-departments-count').textContent=`${_orgDepts.length} departement${_orgDepts.length!==1?'s':''}`;
+  const el=document.getElementById('org-departments-list');
+  if(!_orgDepts.length){el.innerHTML=_orgEmpty('Aucun departement');return;}
+  el.innerHTML=`<div style="overflow-x:auto;"><table class="tbl"><thead><tr><th>Nom</th><th>Code</th><th>Manager</th><th>Employes</th><th></th></tr></thead><tbody>`+
+    _orgDepts.map(d=>`<tr>
+      <td><strong>${escHtml(d.name)}</strong></td>
+      <td>${escHtml(d.cost_center)||'—'}</td>
+      <td>${escHtml(d.manager_name)||'—'}</td>
+      <td>${d.employee_count}</td>
+      <td style="text-align:right;white-space:nowrap;">
+        <button class="btn btn-outline btn-sm" onclick="editDepartment('${d.id}')">Modifier</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteDepartment('${d.id}')">×</button>
+      </td>
+    </tr>`).join('')+`</tbody></table></div>`;
+}
+async function openDepartmentModal(){
+  ['org-dept-id','org-dept-name','org-dept-cost-center','org-dept-notes'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  await _populateEmployeesIntoSelect('org-dept-manager','-- Aucun --');
+  document.getElementById('org-dept-modal-title').textContent='Nouveau Departement';
+  document.getElementById('org-department-modal').classList.add('show');
+}
+async function editDepartment(id){
+  const d=_orgDepts.find(x=>x.id===id);if(!d)return;
+  await _populateEmployeesIntoSelect('org-dept-manager','-- Aucun --');
+  document.getElementById('org-dept-id').value=d.id;
+  document.getElementById('org-dept-name').value=d.name||'';
+  document.getElementById('org-dept-cost-center').value=d.cost_center||'';
+  document.getElementById('org-dept-manager').value=d.manager_id||'';
+  document.getElementById('org-dept-notes').value=d.notes||'';
+  document.getElementById('org-dept-modal-title').textContent='Modifier Departement';
+  document.getElementById('org-department-modal').classList.add('show');
+}
+async function saveDepartment(){
+  const id=document.getElementById('org-dept-id').value;
+  const body={
+    name:document.getElementById('org-dept-name').value,
+    cost_center:document.getElementById('org-dept-cost-center').value,
+    manager_id:document.getElementById('org-dept-manager').value||null,
+    notes:document.getElementById('org-dept-notes').value,
+  };
+  const url=id?'/api/finance/departments/update':'/api/finance/departments';
+  if(id)body.id=id;
+  const r=await _orgErr(post(url,body));
+  if(!r||r.error)return;
+  toast(id?'Departement mis a jour':'Departement cree','success');
+  closeOrgModal('org-department-modal');
+  loadDepartments();
+}
+async function deleteDepartment(id){
+  if(!confirm('Supprimer ce departement ?\nLes employes seront detaches.'))return;
+  const r=await _orgErr(post('/api/finance/departments/delete',{id}));
+  if(r&&!r.error){toast('Departement supprime','success');loadDepartments();}
+}
+
+/* ── EMPLOYEES ───────────────────────────────────────────── */
+async function _populateDeptsIntoSelect(selectId,placeholder){
+  if(!_orgDepts.length){const r=await api('/api/finance/departments');_orgDepts=r.departments||[];}
+  const el=document.getElementById(selectId);if(!el)return;
+  el.innerHTML=`<option value="">${placeholder||'-- Aucun --'}</option>`+_orgDepts.map(d=>`<option value="${d.id}">${escHtml(d.name)}</option>`).join('');
+}
+async function _populateEmployeesIntoSelect(selectId,placeholder){
+  if(!_orgEmployees.length){const r=await api('/api/finance/employees');_orgEmployees=r.employees||[];}
+  const el=document.getElementById(selectId);if(!el)return;
+  el.innerHTML=`<option value="">${placeholder||'-- Aucun --'}</option>`+_orgEmployees.filter(e=>e.active).map(e=>`<option value="${e.id}">${escHtml(e.full_name)}</option>`).join('');
+}
+async function _populateClientsIntoSelect(selectId,placeholder){
+  if(!_orgClients.length){const r=await api('/api/finance/clients');_orgClients=r.clients||[];}
+  const el=document.getElementById(selectId);if(!el)return;
+  const opts=_orgClients.filter(c=>c.active).map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+  el.innerHTML=(placeholder?`<option value="">${placeholder}</option>`:'')+opts;
+}
+async function loadEmployees(){
+  const inactive=document.getElementById('org-emp-show-inactive')?.checked?'1':'0';
+  const dept=document.getElementById('org-emp-filter-dept')?.value||'';
+  // Refresh dept filter dropdown content
+  if(_orgDepts.length===0){const r=await api('/api/finance/departments');_orgDepts=r.departments||[];}
+  const filterEl=document.getElementById('org-emp-filter-dept');
+  if(filterEl){const cur=filterEl.value;filterEl.innerHTML='<option value="">Tous departements</option>'+_orgDepts.map(d=>`<option value="${d.id}">${escHtml(d.name)}</option>`).join('');filterEl.value=cur;}
+
+  let url='/api/finance/employees?include_inactive='+inactive;
+  if(dept)url+='&department_id='+encodeURIComponent(dept);
+  const d=await api(url);
+  _orgEmployees=d.employees||[];
+  _orgCanSeeSalary=!!d.can_see_salary;
+  document.getElementById('org-employees-count').textContent=`${_orgEmployees.length} employe${_orgEmployees.length!==1?'s':''}`;
+  const hint=document.getElementById('org-emp-salary-hint');
+  if(hint)hint.textContent=_orgCanSeeSalary?'• Salaires visibles (admin)':'• Salaires masques (non-admin)';
+
+  const el=document.getElementById('org-employees-list');
+  if(!_orgEmployees.length){el.innerHTML=_orgEmpty('Aucun employe');return;}
+  const showSal=_orgCanSeeSalary;
+  el.innerHTML=`<div style="overflow-x:auto;"><table class="tbl"><thead><tr><th>Nom</th><th>Matricule</th><th>Poste</th><th>Departement</th><th>Manager</th><th>Debut</th>${showSal?'<th>Salaire mensuel</th>':''}<th>Statut</th><th></th></tr></thead><tbody>`+
+    _orgEmployees.map(e=>`<tr>
+      <td><strong>${escHtml(e.full_name)}</strong>${e.email?`<div style="font-size:10px;color:var(--muted);">${escHtml(e.email)}</div>`:''}</td>
+      <td>${escHtml(e.matricule)||'—'}</td>
+      <td>${escHtml(e.position)||'—'}</td>
+      <td>${escHtml(e.department_name)||'—'}</td>
+      <td>${escHtml(e.manager_name)||'—'}</td>
+      <td>${escHtml(e.start_date)||'—'}</td>
+      ${showSal?`<td>${e.monthly_salary!==null?_orgFmtMoney(e.monthly_salary,e.salary_currency):'—'}</td>`:''}
+      <td>${e.active?'<span style="color:var(--green);font-weight:700;">Actif</span>':'<span style="color:var(--muted);">Inactif</span>'}</td>
+      <td style="text-align:right;white-space:nowrap;">
+        <button class="btn btn-outline btn-sm" onclick="editEmployee('${e.id}')">Modifier</button>
+        ${e.active?`<button class="btn btn-outline btn-sm" onclick="deactivateEmployee('${e.id}')">Desactiver</button>`:''}
+        <button class="btn btn-danger btn-sm" onclick="deleteEmployee('${e.id}')">×</button>
+      </td>
+    </tr>`).join('')+`</tbody></table></div>`;
+}
+async function openEmployeeModal(){
+  ['org-emp-id','org-emp-full-name','org-emp-matricule','org-emp-cin','org-emp-email','org-emp-phone','org-emp-position','org-emp-start-date','org-emp-end-date','org-emp-salary','org-emp-notes'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  await _populateDeptsIntoSelect('org-emp-dept','-- Aucun --');
+  await _populateEmployeesIntoSelect('org-emp-manager','-- Aucun --');
+  document.getElementById('org-emp-salary-cur').value='TND';
+  // Hide salary fields if user is not admin
+  const can=_orgCanSeeSalary;
+  document.getElementById('org-emp-salary-row').style.display=can?'block':'none';
+  document.getElementById('org-emp-salary-cur-row').style.display=can?'block':'none';
+  document.getElementById('org-emp-modal-title').textContent='Nouvel Employe';
+  document.getElementById('org-employee-modal').classList.add('show');
+}
+async function editEmployee(id){
+  const e=_orgEmployees.find(x=>x.id===id);if(!e)return;
+  await _populateDeptsIntoSelect('org-emp-dept','-- Aucun --');
+  await _populateEmployeesIntoSelect('org-emp-manager','-- Aucun --');
+  document.getElementById('org-emp-id').value=e.id;
+  document.getElementById('org-emp-full-name').value=e.full_name||'';
+  document.getElementById('org-emp-matricule').value=e.matricule||'';
+  document.getElementById('org-emp-cin').value=e.cin||'';
+  document.getElementById('org-emp-email').value=e.email||'';
+  document.getElementById('org-emp-phone').value=e.phone||'';
+  document.getElementById('org-emp-position').value=e.position||'';
+  document.getElementById('org-emp-dept').value=e.department_id||'';
+  document.getElementById('org-emp-manager').value=e.manager_id||'';
+  document.getElementById('org-emp-start-date').value=e.start_date||'';
+  document.getElementById('org-emp-end-date').value=e.end_date||'';
+  if(_orgCanSeeSalary){
+    document.getElementById('org-emp-salary').value=e.monthly_salary??'';
+    document.getElementById('org-emp-salary-cur').value=e.salary_currency||'TND';
+  }
+  document.getElementById('org-emp-notes').value=e.notes||'';
+  const can=_orgCanSeeSalary;
+  document.getElementById('org-emp-salary-row').style.display=can?'block':'none';
+  document.getElementById('org-emp-salary-cur-row').style.display=can?'block':'none';
+  document.getElementById('org-emp-modal-title').textContent='Modifier Employe';
+  document.getElementById('org-employee-modal').classList.add('show');
+}
+async function saveEmployee(){
+  const id=document.getElementById('org-emp-id').value;
+  const body={
+    full_name:document.getElementById('org-emp-full-name').value,
+    matricule:document.getElementById('org-emp-matricule').value,
+    cin:document.getElementById('org-emp-cin').value,
+    email:document.getElementById('org-emp-email').value,
+    phone:document.getElementById('org-emp-phone').value,
+    position:document.getElementById('org-emp-position').value,
+    department_id:document.getElementById('org-emp-dept').value||null,
+    manager_id:document.getElementById('org-emp-manager').value||null,
+    start_date:document.getElementById('org-emp-start-date').value||null,
+    end_date:document.getElementById('org-emp-end-date').value||null,
+    notes:document.getElementById('org-emp-notes').value,
+  };
+  if(_orgCanSeeSalary){
+    const sal=document.getElementById('org-emp-salary').value;
+    body.monthly_salary=sal===''?null:parseFloat(sal);
+    body.salary_currency=document.getElementById('org-emp-salary-cur').value;
+  }
+  const url=id?'/api/finance/employees/update':'/api/finance/employees';
+  if(id)body.id=id;
+  const r=await _orgErr(post(url,body));
+  if(!r||r.error)return;
+  toast(id?'Employe mis a jour':'Employe cree','success');
+  closeOrgModal('org-employee-modal');
+  loadEmployees();
+}
+async function deactivateEmployee(id){
+  if(!confirm('Desactiver cet employe ?'))return;
+  const r=await _orgErr(post('/api/finance/employees/deactivate',{id}));
+  if(r&&!r.error){toast('Employe desactive','success');loadEmployees();}
+}
+async function deleteEmployee(id){
+  if(!confirm('Supprimer definitivement cet employe ?\nLes affectations projet seront supprimees.'))return;
+  const r=await _orgErr(post('/api/finance/employees/delete',{id}));
+  if(r&&!r.error){toast('Employe supprime','success');loadEmployees();}
+}
+
+/* ── PROJECTS ────────────────────────────────────────────── */
+async function loadProjects(){
+  const status=document.getElementById('org-proj-filter-status')?.value||'';
+  const client=document.getElementById('org-proj-filter-client')?.value||'';
+  // Populate client filter
+  if(_orgClients.length===0){const r=await api('/api/finance/clients');_orgClients=r.clients||[];}
+  const cFilter=document.getElementById('org-proj-filter-client');
+  if(cFilter){const cur=cFilter.value;cFilter.innerHTML='<option value="">Tous clients</option>'+_orgClients.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');cFilter.value=cur;}
+  let url='/api/finance/projects';
+  const params=[];if(status)params.push('status='+encodeURIComponent(status));if(client)params.push('client_id='+encodeURIComponent(client));
+  if(params.length)url+='?'+params.join('&');
+  const d=await api(url);
+  const list=d.projects||[];
+  document.getElementById('org-projects-count').textContent=`${list.length} projet${list.length!==1?'s':''}`;
+  const el=document.getElementById('org-projects-list');
+  if(!list.length){el.innerHTML=_orgEmpty('Aucun projet');return;}
+  el.innerHTML=`<div style="overflow-x:auto;"><table class="tbl"><thead><tr><th>Code</th><th>Nom</th><th>Client</th><th>Statut</th><th>Periode</th><th>Valeur contrat</th><th>Affectations</th><th></th></tr></thead><tbody>`+
+    list.map(p=>{
+      const sLbl=p.status==='active'?'<span style="color:var(--green);font-weight:700;">Actif</span>':p.status==='paused'?'<span style="color:var(--orange,#d97706);font-weight:700;">En pause</span>':'<span style="color:var(--muted);">Termine</span>';
+      const period=(p.start_date||'')+(p.end_date?' → '+p.end_date:'');
+      return `<tr>
+        <td><code>${escHtml(p.code)||'—'}</code></td>
+        <td><strong>${escHtml(p.name)}</strong>${p.description?`<div style="font-size:10px;color:var(--muted);">${escHtml(p.description.slice(0,80))}</div>`:''}</td>
+        <td>${escHtml(p.client_name)||'—'}<div style="font-size:10px;color:var(--muted);">${escHtml(p.client_country)||''}</div></td>
+        <td>${sLbl}</td>
+        <td style="font-size:11px;">${escHtml(period)||'—'}</td>
+        <td>${p.contract_value!==null?_orgFmtMoney(p.contract_value,p.contract_currency):'—'}</td>
+        <td>${p.assignment_count}</td>
+        <td style="text-align:right;white-space:nowrap;">
+          <button class="btn btn-outline btn-sm" onclick="editProject('${p.id}')">Modifier</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteProject('${p.id}')">×</button>
+        </td>
+      </tr>`;
+    }).join('')+`</tbody></table></div>`;
+}
+async function openProjectModal(){
+  ['org-proj-id','org-proj-code','org-proj-name','org-proj-description','org-proj-start-date','org-proj-end-date','org-proj-contract-value','org-proj-notes'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  await _populateClientsIntoSelect('org-proj-client','-- Selectionner un client --');
+  document.getElementById('org-proj-status').value='active';
+  document.getElementById('org-proj-contract-currency').value='EUR';
+  document.getElementById('org-proj-modal-title').textContent='Nouveau Projet';
+  document.getElementById('org-project-modal').classList.add('show');
+}
+async function editProject(id){
+  const r=await api('/api/finance/projects');
+  const p=(r.projects||[]).find(x=>x.id===id);if(!p)return;
+  await _populateClientsIntoSelect('org-proj-client','-- Selectionner un client --');
+  document.getElementById('org-proj-id').value=p.id;
+  document.getElementById('org-proj-code').value=p.code||'';
+  document.getElementById('org-proj-name').value=p.name||'';
+  document.getElementById('org-proj-client').value=p.client_id||'';
+  document.getElementById('org-proj-description').value=p.description||'';
+  document.getElementById('org-proj-start-date').value=p.start_date||'';
+  document.getElementById('org-proj-end-date').value=p.end_date||'';
+  document.getElementById('org-proj-status').value=p.status||'active';
+  document.getElementById('org-proj-contract-value').value=p.contract_value??'';
+  document.getElementById('org-proj-contract-currency').value=p.contract_currency||'EUR';
+  document.getElementById('org-proj-notes').value=p.notes||'';
+  document.getElementById('org-proj-modal-title').textContent='Modifier Projet';
+  document.getElementById('org-project-modal').classList.add('show');
+}
+async function saveProject(){
+  const id=document.getElementById('org-proj-id').value;
+  const cv=document.getElementById('org-proj-contract-value').value;
+  const body={
+    code:document.getElementById('org-proj-code').value,
+    name:document.getElementById('org-proj-name').value,
+    client_id:document.getElementById('org-proj-client').value,
+    description:document.getElementById('org-proj-description').value,
+    start_date:document.getElementById('org-proj-start-date').value||null,
+    end_date:document.getElementById('org-proj-end-date').value||null,
+    status:document.getElementById('org-proj-status').value,
+    contract_value:cv===''?null:parseFloat(cv),
+    contract_currency:document.getElementById('org-proj-contract-currency').value,
+    notes:document.getElementById('org-proj-notes').value,
+  };
+  const url=id?'/api/finance/projects/update':'/api/finance/projects';
+  if(id)body.id=id;
+  const r=await _orgErr(post(url,body));
+  if(!r||r.error)return;
+  toast(id?'Projet mis a jour':'Projet cree','success');
+  closeOrgModal('org-project-modal');
+  loadProjects();
+}
+async function deleteProject(id){
+  if(!confirm('Supprimer ce projet ?\nLes affectations seront supprimees.'))return;
+  const r=await _orgErr(post('/api/finance/projects/delete',{id}));
+  if(r&&!r.error){toast('Projet supprime','success');loadProjects();}
+}
 </script>
 </body>
 </html>

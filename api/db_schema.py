@@ -23,6 +23,11 @@ Schema overview:
     doc_history     generated attestations / ordres de mission
     chat_messages   Mr Hamza conversation memory
     kv_settings     generic key/value for company config, references, etc.
+    clients              external clients we bill (PR-1 finance foundation)
+    departments          internal departments
+    employees            employees as DB-backed records
+    projects             revenue-bearing projects, linked to a client
+    project_assignments  N:M employee <-> project allocation, with %
 """
 import os
 import uuid
@@ -209,6 +214,124 @@ CREATE TABLE IF NOT EXISTS kv_settings (
     value           JSONB NOT NULL,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ════════════════════════════════════════════════════════════════
+-- PR-1: Organization foundation (clients, departments, employees,
+-- projects, project_assignments). Finance and revenue tables build
+-- on top of these in subsequent PRs.
+-- ════════════════════════════════════════════════════════════════
+
+-- ── Clients (customers we bill) ────────────────────────────────
+CREATE TABLE IF NOT EXISTS clients (
+    id                TEXT PRIMARY KEY,
+    name              TEXT NOT NULL,
+    legal_name        TEXT,
+    country           TEXT NOT NULL DEFAULT 'TN',     -- ISO 3166-1 alpha-2
+    default_currency  TEXT NOT NULL DEFAULT 'EUR',
+    vat_id            TEXT,                            -- "DE123456789", etc.
+    email             TEXT,
+    phone             TEXT,
+    address           TEXT,
+    notes             TEXT,
+    active            BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by        TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS clients_name_lower_idx ON clients (LOWER(name));
+CREATE INDEX IF NOT EXISTS clients_active_idx ON clients (active);
+
+-- ── Departments (internal org units) ───────────────────────────
+CREATE TABLE IF NOT EXISTS departments (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    cost_center  TEXT,                                  -- optional GL code
+    manager_id   TEXT,                                  -- FK to employees, set after employees exist
+    notes        TEXT,
+    created_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS departments_name_lower_idx ON departments (LOWER(name));
+
+-- ── Employees ──────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS employees (
+    id               TEXT PRIMARY KEY,
+    matricule        TEXT,                              -- internal employee number
+    cin              TEXT,                              -- carte d'identite
+    full_name        TEXT NOT NULL,
+    email            TEXT,
+    phone            TEXT,
+    position         TEXT,
+    department_id    TEXT REFERENCES departments(id) ON DELETE SET NULL,
+    manager_id       TEXT REFERENCES employees(id) ON DELETE SET NULL,
+    start_date       DATE,
+    end_date         DATE,                              -- null = active
+    monthly_salary   NUMERIC(15, 2),                    -- gross
+    salary_currency  TEXT NOT NULL DEFAULT 'TND',
+    user_id          TEXT REFERENCES users(id) ON DELETE SET NULL,
+    notes            TEXT,
+    active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by       TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS employees_dept_idx     ON employees (department_id);
+CREATE INDEX IF NOT EXISTS employees_active_idx   ON employees (active);
+CREATE INDEX IF NOT EXISTS employees_matricule_idx ON employees (matricule);
+
+-- Late-bound FK from departments.manager_id -> employees.id
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'departments_manager_fk'
+    ) THEN
+        ALTER TABLE departments
+            ADD CONSTRAINT departments_manager_fk
+            FOREIGN KEY (manager_id) REFERENCES employees(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+-- ── Projects ───────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS projects (
+    id                 TEXT PRIMARY KEY,
+    code               TEXT,                            -- e.g. "PRJ-2026-001"
+    name               TEXT NOT NULL,
+    client_id          TEXT NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,
+    description        TEXT,
+    start_date         DATE,
+    end_date           DATE,
+    status             TEXT NOT NULL DEFAULT 'active',  -- active | paused | closed
+    contract_value     NUMERIC(15, 2),                  -- total contract amount
+    contract_currency  TEXT NOT NULL DEFAULT 'EUR',
+    notes              TEXT,
+    created_by         TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS projects_code_unique ON projects (code) WHERE code IS NOT NULL AND code <> '';
+CREATE INDEX IF NOT EXISTS projects_client_idx ON projects (client_id);
+CREATE INDEX IF NOT EXISTS projects_status_idx ON projects (status);
+
+-- ── Project assignments (N:M employee <-> project) ─────────────
+CREATE TABLE IF NOT EXISTS project_assignments (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    employee_id     TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    allocation_pct  NUMERIC(5, 2) NOT NULL CHECK (allocation_pct >= 0 AND allocation_pct <= 100),
+    role            TEXT,                                -- "Lead developer", "QA", etc.
+    start_date      DATE NOT NULL,
+    end_date        DATE,                                -- null = ongoing
+    hourly_rate     NUMERIC(15, 2),                      -- optional
+    rate_currency   TEXT NOT NULL DEFAULT 'EUR',
+    notes           TEXT,
+    created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS proj_assign_project_idx  ON project_assignments (project_id);
+CREATE INDEX IF NOT EXISTS proj_assign_employee_idx ON project_assignments (employee_id);
+CREATE INDEX IF NOT EXISTS proj_assign_period_idx   ON project_assignments (employee_id, start_date, end_date);
 """
 
 

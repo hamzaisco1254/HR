@@ -44,6 +44,9 @@ from invoice_processor import process_invoice, generate_ai_insights
 from kpi_engine import compute_all_kpis, get_cashflow_timeseries, get_status_distribution
 from auth import UserStore, login_required, admin_required
 from trips_store import TripsStore, TRIP_DOCS, VISA_DOCS
+from client_store import ClientStore
+from employee_store import DepartmentStore, EmployeeStore, strip_sensitive
+from project_store import ProjectStore
 from rag_store import RagStore, CATEGORIES as RAG_CATEGORIES
 import outlook_agent
 from gemini_client import generate as gemini_generate, is_configured as gemini_configured
@@ -172,6 +175,10 @@ fx_rates = ExchangeRates()
 user_store = UserStore()
 trips_store = TripsStore()
 rag_store = RagStore()
+client_store     = ClientStore()
+department_store = DepartmentStore()
+employee_store   = EmployeeStore()
+project_store    = ProjectStore()
 
 # ---------------------------------------------------------------------------
 # Cloud URL normalizer (exact copy of desktop)
@@ -845,6 +852,289 @@ def api_finance_exchange_rate():
 @login_required
 def api_ai_status():
     return jsonify({'available': gemini_configured()})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ORGANIZATION FOUNDATION API (PR-1)
+# Clients, Departments, Employees, Projects, Project assignments.
+# All endpoints require login. Mutating endpoints require admin role.
+# Salary fields are filtered out for non-admin readers.
+# ═══════════════════════════════════════════════════════════════════
+
+def _is_admin() -> bool:
+    return session.get('user_role') == 'admin'
+
+def _current_user_id() -> str:
+    return session.get('user_id') or ''
+
+
+# ── Clients ────────────────────────────────────────────────────────
+
+@app.route('/api/finance/clients', methods=['GET'])
+@login_required
+def api_clients_list():
+    include_inactive = request.args.get('include_inactive', '0') in ('1', 'true', 'yes')
+    return jsonify({'clients': client_store.list_clients(include_inactive=include_inactive)})
+
+
+@app.route('/api/finance/clients', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.client.create', entity='client')
+def api_clients_create():
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify({'status': 'ok', 'client': client_store.add(data, created_by=_current_user_id())})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/finance/clients/update', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.client.update', entity='client', entity_arg='id')
+def api_clients_update():
+    data = request.get_json(force=True) or {}
+    cid = (data.pop('id', '') or '').strip()
+    try:
+        result = client_store.update(cid, data)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if result is None:
+        return jsonify({'error': 'Client introuvable'}), 404
+    return jsonify({'status': 'ok', 'client': result})
+
+
+@app.route('/api/finance/clients/delete', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.client.delete', entity='client', entity_arg='id')
+def api_clients_delete():
+    data = request.get_json(force=True) or {}
+    cid = (data.get('id') or '').strip()
+    if client_store.has_projects(cid):
+        return jsonify({'error': 'Ce client est lie a des projets. Desactivez-le ou supprimez ses projets d\'abord.'}), 409
+    if not client_store.delete(cid):
+        return jsonify({'error': 'Client introuvable'}), 404
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/finance/clients/deactivate', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.client.deactivate', entity='client', entity_arg='id')
+def api_clients_deactivate():
+    data = request.get_json(force=True) or {}
+    if not client_store.deactivate((data.get('id') or '').strip()):
+        return jsonify({'error': 'Client introuvable'}), 404
+    return jsonify({'status': 'ok'})
+
+
+# ── Departments ────────────────────────────────────────────────────
+
+@app.route('/api/finance/departments', methods=['GET'])
+@login_required
+def api_departments_list():
+    return jsonify({'departments': department_store.list_departments()})
+
+
+@app.route('/api/finance/departments', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.department.create', entity='department')
+def api_departments_create():
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify({'status': 'ok', 'department': department_store.add(data, created_by=_current_user_id())})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/finance/departments/update', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.department.update', entity='department', entity_arg='id')
+def api_departments_update():
+    data = request.get_json(force=True) or {}
+    did = (data.pop('id', '') or '').strip()
+    try:
+        result = department_store.update(did, data)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if result is None:
+        return jsonify({'error': 'Departement introuvable'}), 404
+    return jsonify({'status': 'ok', 'department': result})
+
+
+@app.route('/api/finance/departments/delete', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.department.delete', entity='department', entity_arg='id')
+def api_departments_delete():
+    data = request.get_json(force=True) or {}
+    if not department_store.delete((data.get('id') or '').strip()):
+        return jsonify({'error': 'Departement introuvable'}), 404
+    return jsonify({'status': 'ok'})
+
+
+# ── Employees ─────────────────────────────────────────────────────
+
+@app.route('/api/finance/employees', methods=['GET'])
+@login_required
+def api_employees_list():
+    include_inactive = request.args.get('include_inactive', '0') in ('1', 'true', 'yes')
+    department_id = request.args.get('department_id') or None
+    rows = employee_store.list_employees(include_inactive=include_inactive, department_id=department_id)
+    if not _is_admin():
+        rows = [strip_sensitive(r) for r in rows]
+    return jsonify({'employees': rows, 'can_see_salary': _is_admin()})
+
+
+@app.route('/api/finance/employees', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.employee.create', entity='employee')
+def api_employees_create():
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify({'status': 'ok', 'employee': employee_store.add(data, created_by=_current_user_id())})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/finance/employees/update', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.employee.update', entity='employee', entity_arg='id')
+def api_employees_update():
+    data = request.get_json(force=True) or {}
+    eid = (data.pop('id', '') or '').strip()
+    try:
+        result = employee_store.update(eid, data)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if result is None:
+        return jsonify({'error': 'Employe introuvable'}), 404
+    return jsonify({'status': 'ok', 'employee': result})
+
+
+@app.route('/api/finance/employees/deactivate', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.employee.deactivate', entity='employee', entity_arg='id')
+def api_employees_deactivate():
+    data = request.get_json(force=True) or {}
+    if not employee_store.deactivate((data.get('id') or '').strip()):
+        return jsonify({'error': 'Employe introuvable'}), 404
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/finance/employees/delete', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.employee.delete', entity='employee', entity_arg='id')
+def api_employees_delete():
+    data = request.get_json(force=True) or {}
+    if not employee_store.delete((data.get('id') or '').strip()):
+        return jsonify({'error': 'Employe introuvable'}), 404
+    return jsonify({'status': 'ok'})
+
+
+# ── Projects ──────────────────────────────────────────────────────
+
+@app.route('/api/finance/projects', methods=['GET'])
+@login_required
+def api_projects_list():
+    status = request.args.get('status') or None
+    client_id = request.args.get('client_id') or None
+    return jsonify({'projects': project_store.list_projects(status=status, client_id=client_id)})
+
+
+@app.route('/api/finance/projects', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.project.create', entity='project')
+def api_projects_create():
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify({'status': 'ok', 'project': project_store.add(data, created_by=_current_user_id())})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/finance/projects/update', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.project.update', entity='project', entity_arg='id')
+def api_projects_update():
+    data = request.get_json(force=True) or {}
+    pid = (data.pop('id', '') or '').strip()
+    try:
+        result = project_store.update(pid, data)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if result is None:
+        return jsonify({'error': 'Projet introuvable'}), 404
+    return jsonify({'status': 'ok', 'project': result})
+
+
+@app.route('/api/finance/projects/delete', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.project.delete', entity='project', entity_arg='id')
+def api_projects_delete():
+    data = request.get_json(force=True) or {}
+    if not project_store.delete((data.get('id') or '').strip()):
+        return jsonify({'error': 'Projet introuvable'}), 404
+    return jsonify({'status': 'ok'})
+
+
+# ── Project assignments ───────────────────────────────────────────
+
+@app.route('/api/finance/projects/<pid>/assignments', methods=['GET'])
+@login_required
+def api_assignments_list(pid: str):
+    return jsonify({'assignments': project_store.list_assignments(project_id=pid)})
+
+
+@app.route('/api/finance/projects/<pid>/assignments', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.assignment.create', entity='project_assignment')
+def api_assignments_create(pid: str):
+    data = request.get_json(force=True) or {}
+    data['project_id'] = pid
+    try:
+        return jsonify({'status': 'ok', 'assignment': project_store.add_assignment(data, created_by=_current_user_id())})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/finance/assignments/update', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.assignment.update', entity='project_assignment', entity_arg='id')
+def api_assignments_update():
+    data = request.get_json(force=True) or {}
+    aid = (data.pop('id', '') or '').strip()
+    try:
+        result = project_store.update_assignment(aid, data)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if result is None:
+        return jsonify({'error': 'Affectation introuvable'}), 404
+    return jsonify({'status': 'ok', 'assignment': result})
+
+
+@app.route('/api/finance/assignments/delete', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='org.assignment.delete', entity='project_assignment', entity_arg='id')
+def api_assignments_delete():
+    data = request.get_json(force=True) or {}
+    if not project_store.delete_assignment((data.get('id') or '').strip()):
+        return jsonify({'error': 'Affectation introuvable'}), 404
+    return jsonify({'status': 'ok'})
 
 
 # ═══════════════════════════════════════════════════════════════════
