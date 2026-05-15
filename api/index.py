@@ -48,6 +48,7 @@ from client_store import ClientStore
 from employee_store import DepartmentStore, EmployeeStore, strip_sensitive
 from project_store import ProjectStore
 from income_store import IncomeStore
+import statements_engine
 from rag_store import RagStore, CATEGORIES as RAG_CATEGORIES
 import outlook_agent
 from gemini_client import generate as gemini_generate, is_configured as gemini_configured
@@ -1333,6 +1334,66 @@ def api_income_upload():
         'ai_used':           ai.get('ai_used', False),
         'ai_error':          ai.get('error'),
     })
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FINANCIAL STATEMENTS API (PR-6)
+# Derived views on top of customer_invoices + invoices + employees.
+# All read-only; FX-normalized to TND at query time.
+# ═══════════════════════════════════════════════════════════════════
+
+def _stmt_year_month():
+    """Parse year + optional month from query string, with safe defaults."""
+    try:
+        year = int(request.args.get('year') or datetime.utcnow().year)
+    except (TypeError, ValueError):
+        year = datetime.utcnow().year
+    month_arg = request.args.get('month')
+    try:
+        month = int(month_arg) if month_arg else None
+        if month is not None and not (1 <= month <= 12):
+            month = None
+    except (TypeError, ValueError):
+        month = None
+    return year, month
+
+
+@app.route('/api/finance/statements/pnl', methods=['GET'])
+@login_required
+def api_statements_pnl():
+    year, month = _stmt_year_month()
+    basis = (request.args.get('basis') or 'accrual').lower()
+    if basis not in ('accrual', 'cash'):
+        basis = 'accrual'
+    return jsonify(statements_engine.compute_pnl(fx_rates, year, month, basis=basis))
+
+
+@app.route('/api/finance/statements/cashflow', methods=['GET'])
+@login_required
+def api_statements_cashflow():
+    year, _m = _stmt_year_month()
+    return jsonify(statements_engine.compute_cashflow(fx_rates, year))
+
+
+@app.route('/api/finance/statements/revenue_breakdown', methods=['GET'])
+@login_required
+def api_statements_revenue_breakdown():
+    year, _m = _stmt_year_month()
+    return jsonify(statements_engine.compute_revenue_breakdown(fx_rates, year))
+
+
+@app.route('/api/finance/statements/expense_breakdown', methods=['GET'])
+@login_required
+def api_statements_expense_breakdown():
+    year, _m = _stmt_year_month()
+    return jsonify(statements_engine.compute_expense_breakdown(fx_rates, year))
+
+
+@app.route('/api/finance/statements/margins', methods=['GET'])
+@login_required
+def api_statements_margins():
+    year, month = _stmt_year_month()
+    return jsonify(statements_engine.compute_margins(fx_rates, year, month))
 
 
 # ═══════════════════════════════════════════════════════════════════

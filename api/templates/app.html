@@ -892,6 +892,9 @@ select{cursor:pointer;appearance:none;
   <a href="#" onclick="showPage('income',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
     Revenus</a>
+  <a href="#" onclick="showPage('statements',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+    Etats financiers</a>
   <a href="#" onclick="showPage('upload',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
     Upload Facture</a>
@@ -1533,6 +1536,92 @@ select{cursor:pointer;appearance:none;
   </div>
 </div>
 
+<!-- ═══════════ FINANCE — ETATS FINANCIERS ═══════════ -->
+<div class="page" id="pg-statements">
+  <div class="page-header">
+    <h2>Etats financiers</h2>
+    <p>P&amp;L, cash flow, marges et breakdowns — montants normalises en TND</p>
+  </div>
+
+  <!-- Period selector -->
+  <div style="display:flex;gap:12px;align-items:center;margin-bottom:18px;flex-wrap:wrap;">
+    <label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);">Periode :</label>
+    <select class="form-select" id="st-year" onchange="loadStatements()" style="max-width:120px;"></select>
+    <select class="form-select" id="st-month" onchange="loadStatements()" style="max-width:180px;">
+      <option value="">Annee complete</option>
+      <option value="1">Janvier</option><option value="2">Fevrier</option><option value="3">Mars</option>
+      <option value="4">Avril</option><option value="5">Mai</option><option value="6">Juin</option>
+      <option value="7">Juillet</option><option value="8">Aout</option><option value="9">Septembre</option>
+      <option value="10">Octobre</option><option value="11">Novembre</option><option value="12">Decembre</option>
+    </select>
+    <select class="form-select" id="st-basis" onchange="loadStatements()" style="max-width:200px;">
+      <option value="accrual">Base accrual (facture)</option>
+      <option value="cash">Base cash (encaisse)</option>
+    </select>
+    <span id="st-period-label" style="margin-left:auto;font-size:11px;color:var(--muted);"></span>
+  </div>
+
+  <!-- KPI strip: 4 margin tiles -->
+  <div class="grid4" style="margin-bottom:18px;" id="st-margin-grid">
+    <div class="kpi-tile" style="background:linear-gradient(135deg,#eef2ff 0%,#e0e7ff 100%);padding:18px 20px;border-radius:var(--radius);border:1px solid #c7d2fe;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#4338ca;">Chiffre d'affaires</div>
+      <div style="font-size:22px;font-weight:900;color:#312e81;margin-top:6px;" id="st-revenue">— TND</div>
+    </div>
+    <div class="kpi-tile" style="background:linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%);padding:18px 20px;border-radius:var(--radius);border:1px solid #6ee7b7;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#047857;">EBITDA</div>
+      <div style="font-size:22px;font-weight:900;color:#064e3b;margin-top:6px;" id="st-ebitda">— TND</div>
+      <div style="font-size:11px;color:#10b981;margin-top:4px;" id="st-ebitda-pct">&nbsp;</div>
+    </div>
+    <div class="kpi-tile" style="background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);padding:18px 20px;border-radius:var(--radius);border:1px solid #fbbf24;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#92400e;">Resultat operationnel</div>
+      <div style="font-size:22px;font-weight:900;color:#78350f;margin-top:6px;" id="st-operating">— TND</div>
+      <div style="font-size:11px;color:#d97706;margin-top:4px;" id="st-operating-pct">&nbsp;</div>
+    </div>
+    <div class="kpi-tile" style="background:linear-gradient(135deg,#fce7f3 0%,#fbcfe8 100%);padding:18px 20px;border-radius:var(--radius);border:1px solid #f9a8d4;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9d174d;">Resultat net</div>
+      <div style="font-size:22px;font-weight:900;color:#831843;margin-top:6px;" id="st-net">— TND</div>
+      <div style="font-size:11px;color:#db2777;margin-top:4px;" id="st-net-pct">&nbsp;</div>
+    </div>
+  </div>
+
+  <!-- P&L table -->
+  <div class="card" style="margin-bottom:20px;">
+    <h3>Compte de resultat (P&amp;L)</h3>
+    <div id="st-pnl-table"></div>
+    <div id="st-pnl-notes" style="margin-top:14px;font-size:10px;color:var(--muted);"></div>
+  </div>
+
+  <!-- Cash flow chart -->
+  <div class="card" style="margin-bottom:20px;">
+    <h3>Flux de tresorerie mensuels</h3>
+    <div style="position:relative;height:300px;"><canvas id="st-cashflow-chart"></canvas></div>
+    <div id="st-cashflow-notes" style="margin-top:10px;font-size:10px;color:var(--muted);"></div>
+  </div>
+
+  <!-- Breakdowns -->
+  <div class="grid2" style="gap:18px;margin-bottom:20px;">
+    <div class="card">
+      <h3>Revenus par client</h3>
+      <div style="position:relative;height:240px;"><canvas id="st-rev-client-chart"></canvas></div>
+      <div id="st-rev-client-table" style="margin-top:14px;"></div>
+    </div>
+    <div class="card">
+      <h3>Revenus par departement</h3>
+      <div style="position:relative;height:240px;"><canvas id="st-rev-dept-chart"></canvas></div>
+      <div id="st-rev-dept-table" style="margin-top:14px;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Depenses par categorie</h3>
+    <div class="grid2" style="gap:18px;align-items:start;">
+      <div style="position:relative;height:280px;"><canvas id="st-exp-cat-chart"></canvas></div>
+      <div id="st-exp-cat-table"></div>
+    </div>
+  </div>
+</div>
+
+
 <!-- ═══════ MR HAMZA — AI CHATBOT ═══════ -->
 <div class="page {% if active_tab=='chat' %}active{% endif %}" id="pg-chat">
   <div class="page-header">
@@ -1854,6 +1943,7 @@ function showPage(id,el){
   if(id==='projects')loadProjects();
   if(id==='upload'){invCatPopulate('m-category');}
   if(id==='income')loadIncomePage();
+  if(id==='statements')loadStatementsPage();
 }
 const api=(u,o)=>fetch(u,o).then(r=>r.json());
 const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
@@ -3066,6 +3156,199 @@ async function deleteIncome(id){
   if(!confirm('Supprimer ce revenu ?'))return;
   const r = await _orgErr(post('/api/finance/income/delete',{id}));
   if(r&&!r.error){toast('Revenu supprime','success');loadIncome();loadIncomeKpis();}
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FINANCIAL STATEMENTS (Etats financiers)
+   ══════════════════════════════════════════════════════════════ */
+const _stCharts = {}; // {chartId: ChartInstance}
+function _stFmt(v){
+  const n = Number(v||0);
+  return n.toLocaleString('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:0})+' TND';
+}
+function _stFmt2(v){
+  const n = Number(v||0);
+  return n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' TND';
+}
+function _stPct(v){return (v===null||v===undefined)?'—':v.toFixed(1)+'%';}
+
+const _stMonthLabels = ['Jan','Fev','Mar','Avr','Mai','Jun','Jul','Aou','Sep','Oct','Nov','Dec'];
+
+const _stPalette = ['#7c3aed','#ec4899','#06b6d4','#10b981','#f59e0b','#ef4444','#8b5cf6','#3b82f6','#84cc16','#14b8a6','#f97316','#a855f7','#6366f1','#22d3ee'];
+
+function _stDestroy(canvasId){
+  if(_stCharts[canvasId]){_stCharts[canvasId].destroy();delete _stCharts[canvasId];}
+}
+
+async function loadStatementsPage(){
+  // Populate year selector
+  const ySel = document.getElementById('st-year');
+  if(ySel && ySel.options.length===0){
+    const now = new Date().getFullYear();
+    for(let y=now;y>=now-4;y--){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===now)o.selected=true;ySel.appendChild(o);}
+  }
+  await loadStatements();
+}
+
+async function loadStatements(){
+  const year  = document.getElementById('st-year').value || new Date().getFullYear();
+  const month = document.getElementById('st-month').value;
+  const basis = document.getElementById('st-basis').value || 'accrual';
+  const params = new URLSearchParams({year}); if(month) params.set('month', month); params.set('basis', basis);
+
+  // Period label
+  const monthLbl = month ? _stMonthLabels[parseInt(month)-1]+' '+year : year+' (annee)';
+  const basisLbl = basis==='cash' ? 'base cash' : 'base accrual';
+  document.getElementById('st-period-label').textContent = `${monthLbl} • ${basisLbl}`;
+
+  // Pull all 4 statements in parallel
+  const [pnl, cf, revBreak, expBreak] = await Promise.all([
+    api('/api/finance/statements/pnl?'+params),
+    api('/api/finance/statements/cashflow?year='+year),
+    api('/api/finance/statements/revenue_breakdown?year='+year),
+    api('/api/finance/statements/expense_breakdown?year='+year),
+  ]);
+
+  _stRenderMargins(pnl);
+  _stRenderPnl(pnl);
+  _stRenderCashflow(cf);
+  _stRenderRevByClient(revBreak);
+  _stRenderRevByDept(revBreak);
+  _stRenderExpByCategory(expBreak);
+}
+
+function _stRenderMargins(pnl){
+  const rev = pnl.revenue;
+  const t = pnl.totals;
+  const pct = v => (rev>0) ? (100*v/rev) : null;
+  document.getElementById('st-revenue').textContent = _stFmt(rev);
+  document.getElementById('st-ebitda').textContent  = _stFmt(t.ebitda);
+  document.getElementById('st-ebitda-pct').textContent    = 'Marge EBITDA: ' + _stPct(pct(t.ebitda));
+  document.getElementById('st-operating').textContent = _stFmt(t.operating_income);
+  document.getElementById('st-operating-pct').textContent = 'Marge op.: ' + _stPct(pct(t.operating_income));
+  document.getElementById('st-net').textContent = _stFmt(t.net_result);
+  document.getElementById('st-net-pct').textContent = 'Marge nette: ' + _stPct(pct(t.net_result));
+}
+
+function _stRenderPnl(pnl){
+  const t = pnl.totals;
+  const rev = pnl.revenue;
+  const fmt = v => `<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_stFmt2(v)}</td>`;
+  const fmtNeg = v => `<td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--red,#dc2626);">(${_stFmt2(v)})</td>`;
+
+  const rows = [];
+  rows.push(`<tr style="background:var(--purple-soft,#f3e8ff);"><td style="font-weight:900;">Chiffre d'affaires (revenu)</td>${fmt(rev)}</tr>`);
+  rows.push(`<tr><td>− Charges externes</td>${fmtNeg(t.charges_externes)}</tr>`);
+  rows.push(`<tr><td>− Charges de personnel</td>${fmtNeg(t.charges_personnel)}</tr>`);
+  rows.push(`<tr style="background:var(--bg);font-weight:800;"><td>= EBITDA</td>${fmt(t.ebitda)}</tr>`);
+  rows.push(`<tr><td>− Dotations aux amortissements</td>${fmtNeg(0)}</tr>`);
+  rows.push(`<tr style="background:var(--bg);font-weight:800;"><td>= Resultat operationnel</td>${fmt(t.operating_income)}</tr>`);
+  rows.push(`<tr><td>− Impots et taxes</td>${fmtNeg(t.taxes)}</tr>`);
+  rows.push(`<tr><td>− Charges financieres</td>${fmtNeg(t.charges_financieres)}</tr>`);
+  const netColor = t.net_result >= 0 ? '#065f46' : '#991b1b';
+  const netBg    = t.net_result >= 0 ? '#d1fae5' : '#fee2e2';
+  rows.push(`<tr style="background:${netBg};color:${netColor};font-weight:900;font-size:14px;"><td>= Resultat net</td>${fmt(t.net_result)}</tr>`);
+
+  document.getElementById('st-pnl-table').innerHTML = `<table class="tbl" style="margin:0;"><tbody>${rows.join('')}</tbody></table>`;
+  document.getElementById('st-pnl-notes').innerHTML = (pnl.notes||[]).map(n=>'• '+escHtml(n)).join('<br>');
+}
+
+function _stRenderCashflow(cf){
+  const months = cf.months || [];
+  const labels = months.map(m=>_stMonthLabels[m.month-1]);
+  const inflows  = months.map(m=>m.revenue_in);
+  const outflows = months.map(m=>m.expenses_out);
+  const net      = months.map(m=>m.net_cf);
+
+  _stDestroy('st-cashflow-chart');
+  const ctx = document.getElementById('st-cashflow-chart').getContext('2d');
+  _stCharts['st-cashflow-chart'] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label:'Entrees (TND)', data: inflows,  backgroundColor:'#10b981', stack:'in' },
+        { label:'Sorties (TND)', data: outflows.map(v=>-v), backgroundColor:'#ef4444', stack:'out' },
+        { label:'Net CF (TND)',  data: net, type:'line', borderColor:'#7c3aed', borderWidth:2, fill:false, tension:0.2, pointRadius:4 },
+      ],
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins: {
+        legend: { position:'bottom', labels:{font:{size:11}} },
+        tooltip: { callbacks: { label: c => c.dataset.label + ': ' + _stFmt(Math.abs(c.raw)) } }
+      },
+      scales: {
+        y: { ticks: { callback: v => _stFmt(v) } }
+      }
+    }
+  });
+  document.getElementById('st-cashflow-notes').innerHTML = (cf.notes||[]).map(n=>'• '+escHtml(n)).join('<br>');
+}
+
+function _stRenderRevByClient(rb){
+  const data = rb.by_client || [];
+  _stDestroy('st-rev-client-chart');
+  if(!data.length){document.getElementById('st-rev-client-table').innerHTML='<div style="color:var(--muted);font-size:11px;">Aucun revenu enregistre.</div>';return;}
+  const ctx = document.getElementById('st-rev-client-chart').getContext('2d');
+  _stCharts['st-rev-client-chart'] = new Chart(ctx, {
+    type:'doughnut',
+    data:{
+      labels: data.map(r=>r.client_name),
+      datasets:[{data: data.map(r=>r.expected_tnd), backgroundColor: _stPalette}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:11}}}}}
+  });
+  document.getElementById('st-rev-client-table').innerHTML =
+    `<table class="tbl" style="margin:0;"><tbody>${data.slice(0,5).map(r=>`<tr><td>${escHtml(r.client_name)}</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_stFmt(r.expected_tnd)}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function _stRenderRevByDept(rb){
+  const data = rb.by_department || [];
+  _stDestroy('st-rev-dept-chart');
+  if(!data.length){document.getElementById('st-rev-dept-table').innerHTML='<div style="color:var(--muted);font-size:11px;">Aucun revenu enregistre.</div>';return;}
+  const ctx = document.getElementById('st-rev-dept-chart').getContext('2d');
+  _stCharts['st-rev-dept-chart'] = new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels: data.map(r=>r.department_name),
+      datasets:[
+        {label:'Attendu', data:data.map(r=>r.expected_tnd), backgroundColor:'#7c3aed'},
+        {label:'Recu',    data:data.map(r=>r.received_tnd), backgroundColor:'#10b981'},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+_stFmt(c.raw)}}},
+      scales:{y:{ticks:{callback:v=>_stFmt(v)}}}
+    }
+  });
+  document.getElementById('st-rev-dept-table').innerHTML =
+    `<table class="tbl" style="margin:0;"><tbody>${data.slice(0,5).map(r=>`<tr><td>${escHtml(r.department_name)}</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_stFmt(r.expected_tnd)}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function _stRenderExpByCategory(eb){
+  const data = eb.by_category || [];
+  _stDestroy('st-exp-cat-chart');
+  if(!data.length){
+    document.getElementById('st-exp-cat-table').innerHTML='<div style="color:var(--muted);font-size:11px;padding:20px;text-align:center;">Aucune depense en '+eb.year+'. Importez ou ajoutez des factures fournisseurs.</div>';
+    return;
+  }
+  // Map category code to label
+  const _labels = _invCatLabels || {};
+  const labelOf = c => _labels[c] || c;
+  const ctx = document.getElementById('st-exp-cat-chart').getContext('2d');
+  _stCharts['st-exp-cat-chart'] = new Chart(ctx, {
+    type:'pie',
+    data:{
+      labels: data.map(r=>labelOf(r.category)),
+      datasets:[{data: data.map(r=>r.amount_tnd), backgroundColor: _stPalette}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:11}}}}}
+  });
+  const total = eb.grand_total || 1;
+  document.getElementById('st-exp-cat-table').innerHTML =
+    `<table class="tbl" style="margin:0;"><thead><tr><th>Categorie</th><th style="text-align:right;">Montant</th><th style="text-align:right;">%</th></tr></thead><tbody>${data.map(r=>`<tr><td>${escHtml(labelOf(r.category))}</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_stFmt(r.amount_tnd)}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${Math.round(100*r.amount_tnd/total)}%</td></tr>`).join('')}</tbody></table><div style="margin-top:8px;font-size:11px;color:var(--muted);text-align:right;">Total : <strong>${_stFmt(total)}</strong></div>`;
 }
 
 async function incOnFileChosen(input){
