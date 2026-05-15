@@ -321,6 +321,43 @@ CREATE UNIQUE INDEX IF NOT EXISTS projects_code_unique ON projects (code) WHERE 
 CREATE INDEX IF NOT EXISTS projects_client_idx ON projects (client_id);
 CREATE INDEX IF NOT EXISTS projects_status_idx ON projects (status);
 
+-- ── Customer invoices (income / outgoing invoices) ─────────────
+-- The revenue side of the business. Each row is one billing event:
+-- typically a monthly invoice we issue to a client. EUR/TND conversion
+-- is computed at create time using current ExchangeRates, stored
+-- alongside the original amount so historical totals are stable when
+-- the rate changes later.
+CREATE TABLE IF NOT EXISTS customer_invoices (
+    id              TEXT PRIMARY KEY,
+    invoice_ref     TEXT,                                 -- our outgoing invoice number
+    client_id       TEXT NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,
+    project_id      TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    department_id   TEXT REFERENCES departments(id) ON DELETE SET NULL,
+    period_month    DATE NOT NULL,                        -- 1st of billing month
+    effort_days     NUMERIC(7, 2),                        -- estimated person-days
+    issue_date      DATE,
+    due_date        DATE,
+    amount          NUMERIC(15, 2) NOT NULL DEFAULT 0,    -- invoiced amount
+    currency        TEXT NOT NULL DEFAULT 'EUR',          -- source currency
+    fx_rate         NUMERIC(15, 6),                       -- source→TND rate used (NULL if currency=TND)
+    amount_tnd      NUMERIC(15, 2),                       -- expected TND equivalent
+    received_tnd    NUMERIC(15, 2),                       -- actually received in TND (when paid)
+    status          TEXT NOT NULL DEFAULT 'draft',        -- draft|sent|paid|overdue|cancelled
+    sent_at         DATE,
+    paid_at         DATE,
+    notes           TEXT,
+    pdf_filename    TEXT,                                  -- attached invoice file name (no blob)
+    created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS cust_inv_period_idx     ON customer_invoices (period_month DESC);
+CREATE INDEX IF NOT EXISTS cust_inv_client_idx     ON customer_invoices (client_id);
+CREATE INDEX IF NOT EXISTS cust_inv_dept_idx       ON customer_invoices (department_id);
+CREATE INDEX IF NOT EXISTS cust_inv_project_idx    ON customer_invoices (project_id);
+CREATE INDEX IF NOT EXISTS cust_inv_status_idx     ON customer_invoices (status);
+CREATE UNIQUE INDEX IF NOT EXISTS cust_inv_ref_unique ON customer_invoices (invoice_ref) WHERE invoice_ref IS NOT NULL AND invoice_ref <> '';
+
 -- ── Project assignments (N:M employee <-> project) ─────────────
 CREATE TABLE IF NOT EXISTS project_assignments (
     id              TEXT PRIMARY KEY,

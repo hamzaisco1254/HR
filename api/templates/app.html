@@ -889,6 +889,9 @@ select{cursor:pointer;appearance:none;
   <a href="#" class="{% if active_tab=='overview' %}active{% endif %}" onclick="showPage('overview',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
     Vue d'ensemble</a>
+  <a href="#" onclick="showPage('income',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+    Revenus</a>
   <a href="#" onclick="showPage('upload',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
     Upload Facture</a>
@@ -1411,6 +1414,125 @@ select{cursor:pointer;appearance:none;
 </div>
 
 
+<!-- ═══════════ FINANCE — INCOME / REVENUS ═══════════ -->
+<div class="page" id="pg-income">
+  <div class="page-header">
+    <h2>Revenus &amp; Income Management</h2>
+    <p>Suivi des revenus generes par les factures clients (EUR &rarr; TND auto-converti)</p>
+  </div>
+
+  <!-- KPI tiles -->
+  <div class="grid4" style="margin-bottom:18px;" id="inc-kpi-grid">
+    <div class="kpi-tile" style="background:linear-gradient(135deg,#eef2ff 0%,#e0e7ff 100%);padding:18px 20px;border-radius:var(--radius);border:1px solid #c7d2fe;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#4338ca;">Revenu attendu (annee)</div>
+      <div style="font-size:24px;font-weight:900;color:#312e81;margin-top:6px;" id="inc-kpi-expected">— TND</div>
+      <div style="font-size:11px;color:#6366f1;margin-top:4px;" id="inc-kpi-expected-sub">&nbsp;</div>
+    </div>
+    <div class="kpi-tile" style="background:linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%);padding:18px 20px;border-radius:var(--radius);border:1px solid #6ee7b7;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#047857;">Revenu encaisse</div>
+      <div style="font-size:24px;font-weight:900;color:#064e3b;margin-top:6px;" id="inc-kpi-received">— TND</div>
+      <div style="font-size:11px;color:#10b981;margin-top:4px;" id="inc-kpi-received-sub">&nbsp;</div>
+    </div>
+    <div class="kpi-tile" style="background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);padding:18px 20px;border-radius:var(--radius);border:1px solid #fbbf24;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#92400e;">A recevoir (gap)</div>
+      <div style="font-size:24px;font-weight:900;color:#78350f;margin-top:6px;" id="inc-kpi-gap">— TND</div>
+      <div style="font-size:11px;color:#d97706;margin-top:4px;" id="inc-kpi-gap-sub">&nbsp;</div>
+    </div>
+    <div class="kpi-tile" style="background:linear-gradient(135deg,#fce7f3 0%,#fbcfe8 100%);padding:18px 20px;border-radius:var(--radius);border:1px solid #f9a8d4;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9d174d;">Factures en retard</div>
+      <div style="font-size:24px;font-weight:900;color:#831843;margin-top:6px;" id="inc-kpi-overdue">—</div>
+      <div style="font-size:11px;color:#db2777;margin-top:4px;" id="inc-kpi-overdue-sub">&nbsp;</div>
+    </div>
+  </div>
+
+  <!-- Action bar -->
+  <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+    <button class="btn btn-pink" onclick="openIncomeModal()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nouveau revenu</button>
+    <button class="btn btn-outline" onclick="document.getElementById('inc-upload-file').click()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Importer PDF (IA)</button>
+    <input type="file" id="inc-upload-file" accept=".pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="incOnFileChosen(this)">
+
+    <select class="form-select" id="inc-filter-year" onchange="loadIncome()" style="max-width:120px;"></select>
+    <select class="form-select" id="inc-filter-status" onchange="loadIncome()" style="max-width:140px;">
+      <option value="">Tous statuts</option>
+      <option value="draft">Brouillon</option>
+      <option value="sent">Envoyee</option>
+      <option value="paid">Payee</option>
+      <option value="overdue">En retard</option>
+      <option value="cancelled">Annulee</option>
+    </select>
+    <select class="form-select" id="inc-filter-client" onchange="loadIncome()" style="max-width:200px;"><option value="">Tous clients</option></select>
+    <select class="form-select" id="inc-filter-dept"   onchange="loadIncome()" style="max-width:200px;"><option value="">Tous departements</option></select>
+    <span id="inc-count" style="margin-left:auto;font-size:11px;color:var(--muted);"></span>
+  </div>
+
+  <!-- FX rate hint -->
+  <div id="inc-fx-banner" style="background:var(--bg);border:1px solid var(--border-l);padding:10px 14px;border-radius:var(--radius-xs);margin-bottom:16px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <span>Taux de change actuel:</span>
+    <strong id="inc-fx-rate">1 EUR = — TND</strong>
+    <span style="color:var(--muted);">(modifiable par invoice)</span>
+    <a href="#" onclick="showPage('settings',this);return false;" style="color:var(--pink);">Reglages devises &rarr;</a>
+  </div>
+
+  <!-- Table -->
+  <div id="inc-list"></div>
+
+  <!-- Mini breakdowns: by department + by client -->
+  <div class="grid2" style="margin-top:24px;gap:18px;">
+    <div class="card">
+      <h3>Par departement</h3>
+      <div id="inc-by-dept"></div>
+    </div>
+    <div class="card">
+      <h3>Par client</h3>
+      <div id="inc-by-client"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ INCOME MODAL ═══════ -->
+<div class="modal-overlay" id="inc-modal">
+  <div class="modal-box" style="max-width:720px;">
+    <h3 style="margin-bottom:18px;" id="inc-modal-title">Nouveau revenu</h3>
+    <input type="hidden" id="inc-id">
+    <input type="hidden" id="inc-pdf-filename">
+    <div class="grid2">
+      <div><label>Mois de facturation *</label><input type="month" class="input" id="inc-period"></div>
+      <div><label>Reference facture</label><input class="input" id="inc-ref" placeholder="2026-INV-042"></div>
+      <div style="grid-column:1/-1;"><label>Client *</label><select class="form-select" id="inc-client"></select></div>
+      <div><label>Departement</label><select class="form-select" id="inc-dept"><option value="">-- Aucun --</option></select></div>
+      <div><label>Projet</label><select class="form-select" id="inc-project"><option value="">-- Aucun --</option></select></div>
+      <div><label>Effort estime (jours)</label><input type="number" step="0.5" min="0" class="input" id="inc-effort"></div>
+      <div><label>Date emission</label><input type="date" class="input" id="inc-issue"></div>
+      <div><label>Montant facture *</label><input type="number" step="0.01" min="0" class="input" id="inc-amount"></div>
+      <div><label>Devise</label><select class="form-select" id="inc-currency" onchange="incRecomputeTnd()"><option>EUR</option><option>TND</option><option>USD</option></select></div>
+      <div><label>Taux de change (override)</label><input type="number" step="0.0001" min="0" class="input" id="inc-fx" oninput="incRecomputeTnd()" placeholder="Auto"></div>
+      <div><label>Montant attendu (TND)</label><input type="number" step="0.01" class="input" id="inc-amount-tnd" readonly style="background:var(--bg);"></div>
+      <div><label>Date echeance</label><input type="date" class="input" id="inc-due"></div>
+      <div><label>Statut</label><select class="form-select" id="inc-status" onchange="incOnStatusChange()">
+        <option value="draft">Brouillon</option>
+        <option value="sent">Envoyee</option>
+        <option value="paid">Payee</option>
+        <option value="overdue">En retard</option>
+        <option value="cancelled">Annulee</option>
+      </select></div>
+      <div id="inc-received-row" style="display:none;"><label>Montant recu (TND)</label><input type="number" step="0.01" class="input" id="inc-received-tnd"></div>
+      <div id="inc-paid-at-row" style="display:none;"><label>Date paiement</label><input type="date" class="input" id="inc-paid-at"></div>
+      <div style="grid-column:1/-1;"><label>Notes</label><input class="input" id="inc-notes"></div>
+      <div id="inc-pdf-row" style="grid-column:1/-1;display:none;background:var(--purple-soft,#f3e8ff);padding:8px 12px;border-radius:var(--radius-xs);font-size:11px;color:#7c3aed;">
+        <strong>PDF attache:</strong> <span id="inc-pdf-display"></span>
+      </div>
+    </div>
+    <div style="margin-top:22px;display:flex;gap:10px;">
+      <button class="btn btn-pink" onclick="saveIncome()" style="flex:1;">Sauvegarder</button>
+      <button class="btn btn-outline" onclick="closeOrgModal('inc-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════ MR HAMZA — AI CHATBOT ═══════ -->
 <div class="page {% if active_tab=='chat' %}active{% endif %}" id="pg-chat">
   <div class="page-header">
@@ -1731,6 +1853,7 @@ function showPage(id,el){
   if(id==='employees')loadEmployees();
   if(id==='projects')loadProjects();
   if(id==='upload'){invCatPopulate('m-category');}
+  if(id==='income')loadIncomePage();
 }
 const api=(u,o)=>fetch(u,o).then(r=>r.json());
 const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
@@ -2707,6 +2830,278 @@ async function deleteProject(id){
   if(!confirm('Supprimer ce projet ?\nLes affectations seront supprimees.'))return;
   const r=await _orgErr(post('/api/finance/projects/delete',{id}));
   if(r&&!r.error){toast('Projet supprime','success');loadProjects();}
+}
+
+/* ══════════════════════════════════════════════════════════════
+   INCOME MANAGEMENT (Revenus)
+   ══════════════════════════════════════════════════════════════ */
+let _incFxRates = null;
+function _incFmtTnd(v){return (v||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' TND';}
+function _incFmtMonth(d){if(!d)return '';try{const dt=new Date(d);return dt.toLocaleDateString('fr-FR',{month:'short',year:'numeric'});}catch(e){return d;}}
+function _incStatusBadge(s){
+  const m={
+    draft:    {bg:'#e5e7eb',c:'#4b5563',l:'Brouillon'},
+    sent:     {bg:'#dbeafe',c:'#1e40af',l:'Envoyee'},
+    paid:     {bg:'#d1fae5',c:'#065f46',l:'Payee'},
+    overdue:  {bg:'#fee2e2',c:'#991b1b',l:'En retard'},
+    cancelled:{bg:'#f3f4f6',c:'#6b7280',l:'Annulee'},
+  };
+  const x=m[s]||m.draft;
+  return `<span class="badge" style="background:${x.bg};color:${x.c};font-weight:700;font-size:10px;padding:3px 9px;border-radius:10px;">${x.l}</span>`;
+}
+
+async function loadIncomePage(){
+  // Year selector — current + previous 4
+  const ySel = document.getElementById('inc-filter-year');
+  if(ySel && ySel.options.length===0){
+    const now = new Date().getFullYear();
+    for(let y=now;y>=now-4;y--){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===now)o.selected=true;ySel.appendChild(o);}
+  }
+  // Lazy-populate client + dept filter dropdowns
+  await _populateClientsIntoSelect('inc-filter-client','Tous clients');
+  await _populateDeptsIntoSelect('inc-filter-dept','Tous departements');
+  await Promise.all([loadIncome(), loadIncomeKpis()]);
+}
+
+async function loadIncome(){
+  const params = new URLSearchParams();
+  const v=id=>document.getElementById(id)?.value||'';
+  if(v('inc-filter-year'))   params.set('year',     v('inc-filter-year'));
+  if(v('inc-filter-status')) params.set('status',   v('inc-filter-status'));
+  if(v('inc-filter-client')) params.set('client_id',v('inc-filter-client'));
+  if(v('inc-filter-dept'))   params.set('department_id',v('inc-filter-dept'));
+
+  const d = await api('/api/finance/income?'+params);
+  const rows = d.income || [];
+  document.getElementById('inc-count').textContent=`${rows.length} ligne${rows.length!==1?'s':''}`;
+  const el = document.getElementById('inc-list');
+  if(!rows.length){el.innerHTML=_orgEmpty('Aucun revenu sur cette periode',`<button class="btn btn-pink btn-sm" onclick="openIncomeModal()">Ajouter le premier</button>`);return;}
+  el.innerHTML=`<div style="overflow-x:auto;"><table class="tbl"><thead><tr>
+    <th>Mois</th><th>Reference</th><th>Client</th><th>Dept</th>
+    <th>Effort</th><th>Montant</th><th>TND attendu</th><th>TND recu</th>
+    <th>Statut</th><th>Echeance</th><th></th>
+  </tr></thead><tbody>`+
+    rows.map(i=>{
+      const overdueDot = (i.status!=='paid'&&i.status!=='cancelled'&&i.due_date&&new Date(i.due_date)<new Date())
+        ? '<span title="En retard" style="color:var(--red,#dc2626);font-weight:900;">●</span> ' : '';
+      return `<tr>
+        <td>${escHtml(_incFmtMonth(i.period_month))}</td>
+        <td><code>${escHtml(i.invoice_ref)||'—'}</code></td>
+        <td><strong>${escHtml(i.client_name)||'—'}</strong></td>
+        <td>${escHtml(i.department_name)||'—'}</td>
+        <td>${i.effort_days!==null?i.effort_days+' j':'—'}</td>
+        <td style="font-variant-numeric:tabular-nums;">${(i.amount||0).toLocaleString('fr-FR',{minimumFractionDigits:2})} ${escHtml(i.currency)}</td>
+        <td style="font-variant-numeric:tabular-nums;font-weight:700;">${i.amount_tnd!==null?_incFmtTnd(i.amount_tnd):'—'}</td>
+        <td style="font-variant-numeric:tabular-nums;">${i.received_tnd!==null?_incFmtTnd(i.received_tnd):'—'}</td>
+        <td>${_incStatusBadge(i.status)}</td>
+        <td>${overdueDot}${escHtml(i.due_date)||'—'}</td>
+        <td style="white-space:nowrap;text-align:right;">
+          <button class="btn btn-outline btn-sm" onclick='editIncome(${JSON.stringify(i).replace(/'/g,"&apos;")})' title="Modifier">&#9998;</button>
+          ${i.status!=='paid'?`<button class="btn btn-outline btn-sm" onclick="markIncomePaid('${i.id}')" title="Marquer payee">&#128176;</button>`:''}
+          <button class="btn btn-danger btn-sm" onclick="deleteIncome('${i.id}')">&#128465;</button>
+        </td>
+      </tr>`;
+    }).join('')+`</tbody></table></div>`;
+}
+
+async function loadIncomeKpis(){
+  const year = document.getElementById('inc-filter-year')?.value || new Date().getFullYear();
+  const d = await api('/api/finance/income/kpis?year='+year);
+  _incFxRates = d.fx_rates || {};
+  const rate = (_incFxRates['eur_to_tnd'] || 0).toFixed(4);
+  document.getElementById('inc-fx-rate').textContent = `1 EUR = ${rate} TND`;
+
+  const tot = d.monthly?.total || {expected_tnd:0,received_tnd:0,invoice_count:0};
+  const gap = (tot.expected_tnd||0) - (tot.received_tnd||0);
+  document.getElementById('inc-kpi-expected').textContent = _incFmtTnd(tot.expected_tnd);
+  document.getElementById('inc-kpi-expected-sub').textContent = `${tot.invoice_count} facture${tot.invoice_count!==1?'s':''} en ${year}`;
+  document.getElementById('inc-kpi-received').textContent = _incFmtTnd(tot.received_tnd);
+  const pct = tot.expected_tnd>0 ? Math.round(100*tot.received_tnd/tot.expected_tnd) : 0;
+  document.getElementById('inc-kpi-received-sub').textContent = `${pct}% des attendus`;
+  document.getElementById('inc-kpi-gap').textContent = _incFmtTnd(gap);
+  document.getElementById('inc-kpi-gap-sub').textContent = gap>0 ? 'a encaisser' : (gap<0 ? 'surplus' : '—');
+
+  const od = d.overdue || [];
+  document.getElementById('inc-kpi-overdue').textContent = od.length;
+  document.getElementById('inc-kpi-overdue-sub').textContent = od.length ? `dont la plus ancienne: ${od[0].days_overdue}j` : 'aucune';
+
+  // Per-department breakdown
+  const byD = d.by_department || [];
+  document.getElementById('inc-by-dept').innerHTML = byD.length
+    ? `<table class="tbl"><thead><tr><th>Departement</th><th style="text-align:right;">Attendu</th><th style="text-align:right;">Recu</th><th style="text-align:right;">Factures</th></tr></thead><tbody>${byD.map(r=>`<tr><td>${escHtml(r.department_name)}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${_incFmtTnd(r.expected_tnd)}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${_incFmtTnd(r.received_tnd)}</td><td style="text-align:right;">${r.invoice_count}</td></tr>`).join('')}</tbody></table>`
+    : `<div style="color:var(--muted);padding:16px 0;font-size:11px;">Pas encore de donnees</div>`;
+
+  // Per-client breakdown
+  const byC = d.by_client || [];
+  document.getElementById('inc-by-client').innerHTML = byC.length
+    ? `<table class="tbl"><thead><tr><th>Client</th><th style="text-align:right;">Attendu</th><th style="text-align:right;">Recu</th><th style="text-align:right;">Factures</th></tr></thead><tbody>${byC.map(r=>`<tr><td>${escHtml(r.client_name)}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${_incFmtTnd(r.expected_tnd)}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${_incFmtTnd(r.received_tnd)}</td><td style="text-align:right;">${r.invoice_count}</td></tr>`).join('')}</tbody></table>`
+    : `<div style="color:var(--muted);padding:16px 0;font-size:11px;">Pas encore de donnees</div>`;
+}
+
+async function openIncomeModal(){
+  // Reset
+  ['inc-id','inc-pdf-filename','inc-period','inc-ref','inc-effort','inc-issue','inc-amount','inc-fx','inc-amount-tnd','inc-due','inc-received-tnd','inc-paid-at','inc-notes'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  document.getElementById('inc-pdf-row').style.display='none';
+  document.getElementById('inc-currency').value='EUR';
+  document.getElementById('inc-status').value='draft';
+  // Default period to current month
+  const now=new Date();
+  document.getElementById('inc-period').value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  await _populateClientsIntoSelect('inc-client','-- Selectionner --');
+  await _populateDeptsIntoSelect('inc-dept','-- Aucun --');
+  await _populateProjectsIntoSelect('inc-project','-- Aucun --');
+  incOnStatusChange();
+  document.getElementById('inc-modal-title').textContent='Nouveau revenu';
+  document.getElementById('inc-modal').classList.add('show');
+}
+
+async function _populateProjectsIntoSelect(selectId, placeholder){
+  const r = await api('/api/finance/projects');
+  const el = document.getElementById(selectId);
+  if(!el) return;
+  el.innerHTML = `<option value="">${placeholder||'-- Aucun --'}</option>` + (r.projects||[]).map(p=>`<option value="${p.id}">${escHtml(p.code?p.code+' — ':'')}${escHtml(p.name)}</option>`).join('');
+}
+
+async function editIncome(i){
+  await _populateClientsIntoSelect('inc-client','-- Selectionner --');
+  await _populateDeptsIntoSelect('inc-dept','-- Aucun --');
+  await _populateProjectsIntoSelect('inc-project','-- Aucun --');
+  document.getElementById('inc-id').value=i.id;
+  document.getElementById('inc-pdf-filename').value=i.pdf_filename||'';
+  document.getElementById('inc-period').value=(i.period_month||'').slice(0,7);
+  document.getElementById('inc-ref').value=i.invoice_ref||'';
+  document.getElementById('inc-client').value=i.client_id||'';
+  document.getElementById('inc-dept').value=i.department_id||'';
+  document.getElementById('inc-project').value=i.project_id||'';
+  document.getElementById('inc-effort').value=i.effort_days??'';
+  document.getElementById('inc-issue').value=i.issue_date||'';
+  document.getElementById('inc-amount').value=i.amount??'';
+  document.getElementById('inc-currency').value=i.currency||'EUR';
+  document.getElementById('inc-fx').value=i.fx_rate??'';
+  document.getElementById('inc-amount-tnd').value=i.amount_tnd??'';
+  document.getElementById('inc-due').value=i.due_date||'';
+  document.getElementById('inc-status').value=i.status||'draft';
+  document.getElementById('inc-received-tnd').value=i.received_tnd??'';
+  document.getElementById('inc-paid-at').value=i.paid_at||'';
+  document.getElementById('inc-notes').value=i.notes||'';
+  if(i.pdf_filename){
+    document.getElementById('inc-pdf-row').style.display='block';
+    document.getElementById('inc-pdf-display').textContent=i.pdf_filename;
+  }else{
+    document.getElementById('inc-pdf-row').style.display='none';
+  }
+  incOnStatusChange();
+  document.getElementById('inc-modal-title').textContent='Modifier revenu';
+  document.getElementById('inc-modal').classList.add('show');
+}
+
+function incRecomputeTnd(){
+  const amt = parseFloat(document.getElementById('inc-amount').value)||0;
+  const cur = document.getElementById('inc-currency').value;
+  const fxOverride = parseFloat(document.getElementById('inc-fx').value);
+  let rate;
+  if(cur==='TND'){rate=1;}
+  else if(fxOverride>0){rate=fxOverride;}
+  else if(_incFxRates){rate = _incFxRates[`${cur.toLowerCase()}_to_tnd`] || 0;}
+  else{rate = 0;}
+  document.getElementById('inc-amount-tnd').value = (amt*rate).toFixed(2);
+}
+
+function incOnStatusChange(){
+  const s = document.getElementById('inc-status').value;
+  const show = s==='paid';
+  document.getElementById('inc-received-row').style.display = show?'block':'none';
+  document.getElementById('inc-paid-at-row').style.display  = show?'block':'none';
+  if(show && !document.getElementById('inc-paid-at').value){
+    const t = new Date(); document.getElementById('inc-paid-at').value = t.toISOString().slice(0,10);
+  }
+  if(show && !document.getElementById('inc-received-tnd').value){
+    document.getElementById('inc-received-tnd').value = document.getElementById('inc-amount-tnd').value||'';
+  }
+}
+
+async function saveIncome(){
+  // Recompute TND just before save
+  incRecomputeTnd();
+  const id = document.getElementById('inc-id').value;
+  const body = {
+    invoice_ref:   document.getElementById('inc-ref').value,
+    period_month:  document.getElementById('inc-period').value,
+    client_id:     document.getElementById('inc-client').value,
+    department_id: document.getElementById('inc-dept').value||null,
+    project_id:    document.getElementById('inc-project').value||null,
+    effort_days:   document.getElementById('inc-effort').value||null,
+    issue_date:    document.getElementById('inc-issue').value||null,
+    amount:        parseFloat(document.getElementById('inc-amount').value)||0,
+    currency:      document.getElementById('inc-currency').value,
+    fx_rate:       document.getElementById('inc-fx').value||null,
+    due_date:      document.getElementById('inc-due').value||null,
+    status:        document.getElementById('inc-status').value,
+    received_tnd:  document.getElementById('inc-received-tnd').value||null,
+    paid_at:       document.getElementById('inc-paid-at').value||null,
+    notes:         document.getElementById('inc-notes').value,
+    pdf_filename:  document.getElementById('inc-pdf-filename').value||null,
+  };
+  if(!body.client_id){toast('Client requis','error');return;}
+  if(!body.period_month){toast('Mois requis','error');return;}
+  const url = id?'/api/finance/income/update':'/api/finance/income';
+  if(id) body.id=id;
+  const r = await _orgErr(post(url, body));
+  if(!r||r.error) return;
+  toast(id?'Revenu mis a jour':'Revenu cree','success');
+  closeOrgModal('inc-modal');
+  loadIncome();loadIncomeKpis();
+}
+
+async function markIncomePaid(id){
+  const amt = prompt('Montant recu en TND (laissez vide pour utiliser le montant attendu):');
+  if(amt===null) return;
+  const body = {id};
+  if(amt.trim()!=='') body.received_tnd = parseFloat(amt)||0;
+  const r = await _orgErr(post('/api/finance/income/mark_paid', body));
+  if(r&&!r.error){toast('Facture marquee payee','success');loadIncome();loadIncomeKpis();}
+}
+
+async function deleteIncome(id){
+  if(!confirm('Supprimer ce revenu ?'))return;
+  const r = await _orgErr(post('/api/finance/income/delete',{id}));
+  if(r&&!r.error){toast('Revenu supprime','success');loadIncome();loadIncomeKpis();}
+}
+
+async function incOnFileChosen(input){
+  const f = input.files && input.files[0];
+  input.value='';
+  if(!f) return;
+  if(f.size > 10*1024*1024){toast('Fichier trop volumineux (max 10 Mo)','error');return;}
+  toast('Analyse IA en cours...','info',2500);
+  const fd = new FormData(); fd.append('file', f);
+  try{
+    const r = await fetch('/api/finance/income/upload',{method:'POST',body:fd});
+    const d = await r.json();
+    if(d.error){toast(d.error,'error',6000);return;}
+    // Open income modal pre-filled with extracted fields
+    await openIncomeModal();
+    const fields = d.extracted_fields || {};
+    if(fields.invoice_ref) document.getElementById('inc-ref').value = fields.invoice_ref;
+    if(fields.invoice_date){
+      document.getElementById('inc-issue').value = fields.invoice_date;
+      document.getElementById('inc-period').value = fields.invoice_date.slice(0,7);
+    }
+    if(fields.due_date) document.getElementById('inc-due').value = fields.due_date;
+    if(fields.amount){
+      document.getElementById('inc-amount').value = fields.amount;
+      incRecomputeTnd();
+    }
+    if(fields.currency) document.getElementById('inc-currency').value = fields.currency;
+    if(d.pdf_filename){
+      document.getElementById('inc-pdf-filename').value = d.pdf_filename;
+      document.getElementById('inc-pdf-row').style.display='block';
+      document.getElementById('inc-pdf-display').textContent = d.pdf_filename;
+    }
+    incRecomputeTnd();
+    if(d.ai_error){toast('Extraction partielle: '+d.ai_error,'info',6000);}
+    else if(d.ai_used){toast('Extraction IA terminee — verifiez les champs','success');}
+  }catch(e){toast('Erreur upload: '+e,'error');}
 }
 </script>
 </body>

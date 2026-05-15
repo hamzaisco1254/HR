@@ -47,6 +47,7 @@ from trips_store import TripsStore, TRIP_DOCS, VISA_DOCS
 from client_store import ClientStore
 from employee_store import DepartmentStore, EmployeeStore, strip_sensitive
 from project_store import ProjectStore
+from income_store import IncomeStore
 from rag_store import RagStore, CATEGORIES as RAG_CATEGORIES
 import outlook_agent
 from gemini_client import generate as gemini_generate, is_configured as gemini_configured
@@ -179,6 +180,7 @@ client_store     = ClientStore()
 department_store = DepartmentStore()
 employee_store   = EmployeeStore()
 project_store    = ProjectStore()
+income_store     = IncomeStore(fx_rates=fx_rates)
 
 # ---------------------------------------------------------------------------
 # Cloud URL normalizer (exact copy of desktop)
@@ -1196,6 +1198,141 @@ def api_assignments_delete():
     if not project_store.delete_assignment((data.get('id') or '').strip()):
         return jsonify({'error': 'Affectation introuvable'}), 404
     return jsonify({'status': 'ok'})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# INCOME MANAGEMENT API (PR-4)
+# Tracks revenue from outgoing customer invoices. EUR→TND conversion
+# is computed at create time using the shared ExchangeRates singleton.
+# All endpoints require login; mutations require admin.
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route('/api/finance/income', methods=['GET'])
+@login_required
+def api_income_list():
+    filters = {
+        'status':        request.args.get('status') or None,
+        'client_id':     request.args.get('client_id') or None,
+        'department_id': request.args.get('department_id') or None,
+        'project_id':    request.args.get('project_id') or None,
+        'period_from':   request.args.get('period_from') or None,
+        'period_to':     request.args.get('period_to') or None,
+        'year':          request.args.get('year') or None,
+    }
+    return jsonify({'income': income_store.list({k: v for k, v in filters.items() if v})})
+
+
+@app.route('/api/finance/income', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='income.create', entity='customer_invoice')
+def api_income_create():
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify({'status': 'ok', 'invoice': income_store.add(data, created_by=_current_user_id())})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/finance/income/update', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='income.update', entity='customer_invoice', entity_arg='id')
+def api_income_update():
+    data = request.get_json(force=True) or {}
+    iid = (data.pop('id', '') or '').strip()
+    try:
+        result = income_store.update(iid, data)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if result is None:
+        return jsonify({'error': 'Revenu introuvable'}), 404
+    return jsonify({'status': 'ok', 'invoice': result})
+
+
+@app.route('/api/finance/income/mark_paid', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='income.mark_paid', entity='customer_invoice', entity_arg='id')
+def api_income_mark_paid():
+    data = request.get_json(force=True) or {}
+    iid = (data.get('id') or '').strip()
+    try:
+        result = income_store.mark_paid(
+            iid,
+            received_tnd=data.get('received_tnd'),
+            paid_at=data.get('paid_at'),
+        )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if result is None:
+        return jsonify({'error': 'Revenu introuvable'}), 404
+    return jsonify({'status': 'ok', 'invoice': result})
+
+
+@app.route('/api/finance/income/delete', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='income.delete', entity='customer_invoice', entity_arg='id')
+def api_income_delete():
+    data = request.get_json(force=True) or {}
+    if not income_store.delete((data.get('id') or '').strip()):
+        return jsonify({'error': 'Revenu introuvable'}), 404
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/finance/income/kpis', methods=['GET'])
+@login_required
+def api_income_kpis():
+    year = request.args.get('year')
+    try:
+        year_int = int(year) if year else None
+    except (TypeError, ValueError):
+        year_int = None
+    return jsonify({
+        'monthly':       income_store.monthly_summary(year_int),
+        'by_department': income_store.by_department(year_int),
+        'by_client':     income_store.by_client(year_int),
+        'overdue':       income_store.overdue(),
+        'fx_rates':      fx_rates.get_all_rates(),
+    })
+
+
+@app.route('/api/finance/income/upload', methods=['POST'])
+@login_required
+@admin_required
+@rate_limit(tag='income_upload', max_requests=20, window_seconds=600, by='user')
+def api_income_upload():
+    """Upload a customer-invoice PDF, run AI extraction, return fields.
+
+    Reuses the existing vendor-invoice OCR pipeline. The caller then
+    POSTs to /api/finance/income to actually persist the row, optionally
+    after the user reviews & overrides extracted fields.
+    """
+    f = request.files.get('file')
+    if not f or not f.filename:
+        return jsonify({'error': 'Aucun fichier fourni'}), 400
+    safe_name = secure_filename(f.filename) or 'invoice'
+    if not safe_name.lower().endswith(('.pdf', '.png', '.jpg', '.jpeg', '.webp')):
+        return jsonify({'error': 'Format non supporte (PDF/PNG/JPG attendu).'}), 400
+    blob = f.read()
+    if len(blob) > 10 * 1024 * 1024:
+        return jsonify({'error': 'Fichier trop volumineux (max 10 Mo).'}), 400
+
+    try:
+        ai = process_invoice(blob, safe_name)
+    except Exception as e:
+        logger.exception('income_upload_ai_failed')
+        return jsonify({'error': f'Echec de l\'extraction IA: {e}'}), 502
+
+    return jsonify({
+        'status':            'ok',
+        'pdf_filename':      safe_name,
+        'extracted_fields':  ai.get('extracted_fields') or {},
+        'confidence_scores': ai.get('confidence_scores') or {},
+        'ai_used':           ai.get('ai_used', False),
+        'ai_error':          ai.get('error'),
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════
