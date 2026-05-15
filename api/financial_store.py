@@ -26,10 +26,12 @@ class InvoiceStore:
             amount = float(data.get('amount', 0))
         except (ValueError, TypeError):
             amount = 0.0
+        category = (data.get('category') or '').strip().lower() or None
         db.execute(
             """INSERT INTO invoices (id, supplier_name, invoice_ref, invoice_date,
-               due_date, amount, currency, payment_status, notes, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+               due_date, amount, currency, payment_status, notes, category,
+               created_at, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 inv_id,
                 data.get('supplier_name', ''),
@@ -40,6 +42,7 @@ class InvoiceStore:
                 data.get('currency', 'TND'),
                 data.get('payment_status', 'unpaid'),
                 data.get('notes', ''),
+                category,
                 now, now,
             ),
         )
@@ -73,7 +76,7 @@ class InvoiceStore:
 
     def update_invoice(self, invoice_id: str, updates: Dict) -> Optional[Dict]:
         allowed = ('supplier_name', 'invoice_ref', 'invoice_date', 'due_date',
-                    'amount', 'currency', 'payment_status', 'notes')
+                    'amount', 'currency', 'payment_status', 'notes', 'category')
         # Fields that are DATE type in Postgres — empty string must become NULL
         date_fields = ('invoice_date', 'due_date')
         sets = []
@@ -85,6 +88,8 @@ class InvoiceStore:
                 if k == 'amount':
                     try: v = float(v)
                     except (ValueError, TypeError): v = 0.0
+                if k == 'category':
+                    v = (v or '').strip().lower() or None  # normalize + '' → NULL
                 sets.append(f"{k} = %s")
                 params.append(v)
         if not sets:
@@ -145,6 +150,7 @@ class InvoiceStore:
             'currency':        r.get('currency', 'TND'),
             'payment_status':  r.get('payment_status', 'unpaid'),
             'notes':           r.get('notes', ''),
+            'category':        r.get('category') or '',
             'created_at':      _dt(r.get('created_at')),
             'updated_at':      _dt(r.get('updated_at')),
         }

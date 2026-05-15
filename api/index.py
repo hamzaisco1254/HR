@@ -678,6 +678,23 @@ def api_set_reference():
                     'counter': ref_mgr.get_counter()})
 
 
+@app.route('/api/reference_info', methods=['GET'])
+@login_required
+def api_reference_info():
+    """Read-only fetch of the current reference state.
+
+    Use this from the UI after a successful document generation to
+    refresh the displayed counter without risking overwriting the
+    server-side value with a stale form input. The server is the only
+    place that increments the counter (in generate_reference()).
+    """
+    return jsonify({
+        'next':        ref_mgr.get_next_reference(),
+        'year_prefix': ref_mgr.get_year_prefix(),
+        'counter':     ref_mgr.get_counter(),
+    })
+
+
 @app.route('/api/reset_reference', methods=['POST'])
 @login_required
 def api_reset_reference():
@@ -808,6 +825,50 @@ def api_invoice_delete():
     if inv_store.delete_invoice(data.get('id', '')):
         return jsonify({'status': 'ok'})
     return jsonify({'error': 'Facture non trouvée'}), 404
+
+
+@app.route('/api/invoice/categories', methods=['GET'])
+@login_required
+def api_invoice_categories():
+    """Return the canonical category code → French label map for UI dropdowns."""
+    from invoice_processor import INVOICE_CATEGORIES
+    return jsonify({
+        'categories': [
+            {'code': code, 'label': label}
+            for code, label, _hint in INVOICE_CATEGORIES
+        ],
+    })
+
+
+@app.route('/api/invoice/classify', methods=['POST'])
+@login_required
+@rate_limit(tag='invoice_classify', max_requests=30, window_seconds=60, by='user')
+@audit(action='invoice.classify', entity='invoice', entity_arg='id')
+def api_invoice_classify():
+    """Ask Gemini to (re)classify an existing invoice from its metadata.
+
+    The AI suggestion is persisted automatically (overwriting any existing
+    category). If the caller wants to review before saving, they can call
+    the upload-extraction flow instead.
+    """
+    from invoice_processor import classify_existing_invoice
+    data = request.get_json(force=True) or {}
+    inv_id = (data.get('id') or '').strip()
+    inv = inv_store.get_by_id(inv_id)
+    if not inv:
+        return jsonify({'error': 'Facture non trouvée'}), 404
+    result = classify_existing_invoice(inv)
+    if result.get('error'):
+        return jsonify({'error': result['error']}), 503 if not result.get('ai_used') else 502
+    if not result.get('category'):
+        return jsonify({'error': 'Catégorie non déterminée.'}), 422
+    updated = inv_store.update_invoice(inv_id, {'category': result['category']})
+    return jsonify({
+        'status':     'ok',
+        'invoice':    updated,
+        'category':   result['category'],
+        'confidence': result.get('confidence', 0.0),
+    })
 
 
 @app.route('/api/finance/balances')

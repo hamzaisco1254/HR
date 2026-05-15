@@ -91,6 +91,13 @@ CREATE INDEX IF NOT EXISTS invoices_status_idx   ON invoices (payment_status);
 CREATE INDEX IF NOT EXISTS invoices_supplier_idx ON invoices (supplier_name);
 CREATE INDEX IF NOT EXISTS invoices_date_idx     ON invoices (invoice_date DESC);
 
+-- Invoice category (AI-classified). Stored as a normalized code (e.g.
+-- 'loyer', 'logiciels'). Free-text on purpose — the canonical category
+-- list lives in invoice_processor.INVOICE_CATEGORIES so new categories
+-- can be added in code without a migration. NULL = not yet classified.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS category TEXT;
+CREATE INDEX IF NOT EXISTS invoices_category_idx ON invoices (category);
+
 -- ── Payments (bank movements) ───────────────────────────────────
 CREATE TABLE IF NOT EXISTS payments (
     id              TEXT PRIMARY KEY,

@@ -1550,7 +1550,8 @@ select{cursor:pointer;appearance:none;
       <div><label>Montant</label><input type="number" step="0.01" class="input" id="ex-amount"><span class="conf-bar" id="cb-amount"></span></div>
       <div><label>Devise</label><select class="select" id="ex-currency"><option value="TND">TND</option><option value="EUR">EUR</option><option value="USD">USD</option></select><span class="conf-bar" id="cb-currency"></span></div>
       <div><label>Statut</label><select class="select" id="ex-status"><option value="unpaid">Impayee</option><option value="paid">Payee</option><option value="overdue">En retard</option><option value="uncertain">Incertain</option></select><span class="conf-bar" id="cb-status"></span></div>
-      <div><label>Notes</label><input class="input" id="ex-notes"></div>
+      <div><label>Categorie <span style="color:var(--purple);font-weight:700;">IA</span></label><select class="select" id="ex-category"><option value="">-- Non classee --</option></select><span class="conf-bar" id="cb-category"></span></div>
+      <div style="grid-column:1/-1;"><label>Notes</label><input class="input" id="ex-notes"></div>
     </div>
     <div style="margin-top:16px;display:flex;gap:10px;">
       <button class="btn btn-pink" onclick="saveExtractedInvoice()">
@@ -1569,7 +1570,8 @@ select{cursor:pointer;appearance:none;
       <div><label>Montant *</label><input type="number" step="0.01" class="input" id="m-amount"></div>
       <div><label>Devise</label><select class="select" id="m-currency"><option value="TND">TND</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
       <div><label>Statut</label><select class="select" id="m-status"><option value="unpaid">Impayee</option><option value="paid">Payee</option><option value="overdue">En retard</option></select></div>
-      <div><label>Notes</label><input class="input" id="m-notes"></div>
+      <div><label>Categorie</label><select class="select" id="m-category"><option value="">-- Non classee --</option></select></div>
+      <div style="grid-column:1/-1;"><label>Notes</label><input class="input" id="m-notes"></div>
     </div>
     <div style="margin-top:16px;"><button class="btn btn-dark" onclick="saveManualInvoice()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1585,13 +1587,14 @@ select{cursor:pointer;appearance:none;
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:end;">
       <div><label>Statut</label><select class="select" id="f-status" style="width:130px;" onchange="loadInvoices()"><option value="">Tous</option><option value="paid">Payee</option><option value="unpaid">Impayee</option><option value="overdue">En retard</option></select></div>
       <div><label>Devise</label><select class="select" id="f-currency" style="width:90px;" onchange="loadInvoices()"><option value="">Toutes</option><option value="TND">TND</option><option value="EUR">EUR</option></select></div>
+      <div><label>Categorie</label><select class="select" id="f-category" style="width:140px;" onchange="loadInvoices()"><option value="">Toutes</option></select></div>
       <div><label>Fournisseur</label><input class="input" id="f-supplier" style="width:160px;" placeholder="Rechercher..." oninput="loadInvoices()"></div>
       <div><label>Du</label><input type="date" class="input" id="f-from" style="width:140px;" onchange="loadInvoices()"></div>
       <div><label>Au</label><input type="date" class="input" id="f-to" style="width:140px;" onchange="loadInvoices()"></div>
       <button class="btn btn-outline btn-sm" onclick="clearFilters()">Reset</button>
     </div>
     <div style="overflow-x:auto;border-radius:var(--radius-xs);border:1px solid var(--border-l);">
-      <table class="tbl"><thead><tr><th>Date</th><th>Fournisseur</th><th>Ref</th><th>Montant</th><th>Devise</th><th>Statut</th><th>Echeance</th><th>Actions</th></tr></thead><tbody id="inv-tbody"></tbody></table>
+      <table class="tbl"><thead><tr><th>Date</th><th>Fournisseur</th><th>Ref</th><th>Montant</th><th>Devise</th><th>Statut</th><th>Categorie</th><th>Echeance</th><th>Actions</th></tr></thead><tbody id="inv-tbody"></tbody></table>
     </div>
   </div>
 </div>
@@ -1682,7 +1685,8 @@ select{cursor:pointer;appearance:none;
       <div><label>Montant</label><input type="number" step="0.01" class="input" id="ed-amount"></div>
       <div><label>Devise</label><select class="select" id="ed-currency"><option value="TND">TND</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
       <div><label>Statut</label><select class="select" id="ed-status"><option value="unpaid">Impayee</option><option value="paid">Payee</option><option value="overdue">En retard</option><option value="uncertain">Incertain</option></select></div>
-      <div><label>Notes</label><input class="input" id="ed-notes"></div>
+      <div><label>Categorie</label><select class="select" id="ed-category"><option value="">-- Non classee --</option></select></div>
+      <div style="grid-column:1/-1;"><label>Notes</label><input class="input" id="ed-notes"></div>
     </div>
     <div style="margin-top:20px;display:flex;gap:10px;">
       <button class="btn btn-pink" onclick="saveEdit()">Enregistrer</button>
@@ -1726,6 +1730,7 @@ function showPage(id,el){
   if(id==='departments')loadDepartments();
   if(id==='employees')loadEmployees();
   if(id==='projects')loadProjects();
+  if(id==='upload'){invCatPopulate('m-category');}
 }
 const api=(u,o)=>fetch(u,o).then(r=>r.json());
 const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
@@ -1746,7 +1751,7 @@ const ORD_MAP={'employee_name':'ord_employee_name','nom & prénom':'ord_employee
 function onEmployeeSelected(p,id){if(!id||!excelData[p][id])return;const r=excelData[p][id];const m=p==='att'?ATT_MAP:ORD_MAP;Object.entries(r).forEach(([k,v])=>{const fid=m[k.toLowerCase()];if(!fid)return;const el=document.getElementById(fid);if(!el)return;if(el.tagName==='SELECT')el.value=v;else if(el.type==='date'){const mt=v.match(/^(\d{4})-(\d{2})-(\d{2})/);if(mt)el.value=v;else{const mt2=v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(mt2)el.value=`${mt2[3]}-${mt2[2]}-${mt2[1]}`;}}else el.value=v;});}
 
 /* ── HR: Generate ────────────────────────────────────────── */
-function generateDocument(dt){const isA=dt==='attestation';const form=document.getElementById(isA?'form-attestation':'form-ordre');const pr=document.getElementById(isA?'att_gen_progress':'ord_gen_progress');const btn=form.querySelector('.btn-generate');const nf=isA?'att_employee_name':'ord_employee_name';const pf=isA?'att_position':'ord_position';if(!document.getElementById(nf).value.trim()){toast("Nom requis",'error');return;}if(isA&&!document.getElementById('att_cin').value.trim()){toast('CIN requis','error');return;}if(!document.getElementById(pf).value.trim()){toast('Poste requis','error');return;}const fd=new FormData(form);pr.style.display='block';btn.disabled=true;btn.style.opacity='.6';fetch(isA?'/attestation':'/ordre_mission',{method:'POST',body:fd}).then(async r=>{pr.style.display='none';btn.disabled=false;btn.style.opacity='1';if(!r.ok){const e=await r.json().catch(()=>({error:'Erreur'}));toast(e.error||'Erreur','error',8000);return;}const b=await r.blob();const d=r.headers.get('Content-Disposition')||'';let fn=isA?'attestation.docx':'ordre.docx';const mt=d.match(/filename[^;=\n]*=(?:(\\?['"])(.*?)\1|(?:[^\s]+'.*?')?([^;\n]*))/i);if(mt)fn=(mt[2]||mt[3]||fn).trim();const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(u),5000);toast('Document genere!','success');fetch('/api/set_reference',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({year_prefix:parseInt(document.getElementById('att_ref_year').value)||0,counter:parseInt(document.getElementById('att_ref_counter').value)||0})}).then(r=>r.json()).then(d=>{document.getElementById('att_ref_counter').value=d.counter;document.getElementById('att_ref_preview').value=d.next;document.getElementById('ord_ref_preview').value=d.next;}).catch(()=>{});}).catch(e=>{pr.style.display='none';btn.disabled=false;btn.style.opacity='1';toast('Erreur: '+e,'error');});}
+function generateDocument(dt){const isA=dt==='attestation';const form=document.getElementById(isA?'form-attestation':'form-ordre');const pr=document.getElementById(isA?'att_gen_progress':'ord_gen_progress');const btn=form.querySelector('.btn-generate');const nf=isA?'att_employee_name':'ord_employee_name';const pf=isA?'att_position':'ord_position';if(!document.getElementById(nf).value.trim()){toast("Nom requis",'error');return;}if(isA&&!document.getElementById('att_cin').value.trim()){toast('CIN requis','error');return;}if(!document.getElementById(pf).value.trim()){toast('Poste requis','error');return;}const fd=new FormData(form);pr.style.display='block';btn.disabled=true;btn.style.opacity='.6';fetch(isA?'/attestation':'/ordre_mission',{method:'POST',body:fd}).then(async r=>{pr.style.display='none';btn.disabled=false;btn.style.opacity='1';if(!r.ok){const e=await r.json().catch(()=>({error:'Erreur'}));toast(e.error||'Erreur','error',8000);return;}const b=await r.blob();const d=r.headers.get('Content-Disposition')||'';let fn=isA?'attestation.docx':'ordre.docx';const mt=d.match(/filename[^;=\n]*=(?:(\\?['"])(.*?)\1|(?:[^\s]+'.*?')?([^;\n]*))/i);if(mt)fn=(mt[2]||mt[3]||fn).trim();const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(u),5000);toast('Document genere!','success');fetch('/api/reference_info').then(r=>r.json()).then(d=>{document.getElementById('att_ref_counter').value=d.counter;document.getElementById('att_ref_year').value=d.year_prefix;document.getElementById('att_ref_preview').value=d.next;const ory=document.getElementById('ord_ref_year');if(ory)ory.value=d.year_prefix;const orc=document.getElementById('ord_ref_counter');if(orc)orc.value=d.counter;document.getElementById('ord_ref_preview').value=d.next;refreshHistory&&refreshHistory();}).catch(()=>{});}).catch(e=>{pr.style.display='none';btn.disabled=false;btn.style.opacity='1';toast('Erreur: '+e,'error');});}
 
 /* ── HR: History ─────────────────────────────────────────── */
 function refreshHistory(){fetch('/api/history?type='+document.getElementById('hist_filter').value).then(r=>r.json()).then(d=>{const tb=document.getElementById('hist_tbody');const docs=d.documents;if(!docs.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">Aucun document genere.</td></tr>';}else{tb.innerHTML=docs.map(d=>`<tr><td>${d.date||''}</td><td style="font-weight:600;">${d.reference||''}</td><td>${d.doc_type==='attestation'?'<span class="badge badge-att">Attestation</span>':'<span class="badge badge-mis">Mission</span>'}</td><td>${d.employee_name||''}</td><td style="font-size:12px;color:var(--muted);">${d.file_path||''}</td></tr>`).join('');}document.getElementById('stat_total').textContent='Total: '+docs.length;document.getElementById('stat_att').textContent='Attestations: '+docs.filter(d=>d.doc_type==='attestation').length;document.getElementById('stat_mis').textContent='Missions: '+docs.filter(d=>d.doc_type==='ordre_mission').length;}).catch(e=>toast('Erreur: '+e,'error'));}
@@ -1802,23 +1807,139 @@ function processUpload(file){
     setConfBar('cb-supplier',c.supplier_name);setConfBar('cb-ref',c.invoice_ref);
     setConfBar('cb-date',c.invoice_date);setConfBar('cb-amount',c.amount);
     setConfBar('cb-currency',c.currency);setConfBar('cb-status',c.payment_status);
+    setConfBar('cb-category',c.category);
+    invCatPopulate('ex-category').then(()=>{document.getElementById('ex-category').value=f.category||'';});
     if(data.error){document.getElementById('ai-warning').style.display='block';document.getElementById('ai-warning').textContent=data.error;}
     document.getElementById('extract-card').style.display='block';
   }).catch(e=>{proc.style.display='none';toast('Erreur: '+e,'error');});
   document.getElementById('inv-file').value='';
 }
 function setConfBar(id,s){s=parseFloat(s)||0;const el=document.getElementById(id);if(!el)return;const p=Math.round(s*100);el.innerHTML=`<div class="conf-fill ${s>=.8?'conf-high':s>=.5?'conf-med':'conf-low'}" style="width:${p}%"></div>`;el.title=`${p}%`;}
-function saveExtractedInvoice(){post('/api/invoice/create',{supplier_name:document.getElementById('ex-supplier').value,invoice_ref:document.getElementById('ex-ref').value,invoice_date:document.getElementById('ex-date').value,due_date:document.getElementById('ex-due').value,amount:parseFloat(document.getElementById('ex-amount').value)||0,currency:document.getElementById('ex-currency').value,payment_status:document.getElementById('ex-status').value,notes:document.getElementById('ex-notes').value,original_filename:uploadedFilename}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Facture enregistree!','success');resetUpload();}).catch(e=>toast('Erreur: '+e,'error'));}
-function saveManualInvoice(){const s=document.getElementById('m-supplier').value;const a=parseFloat(document.getElementById('m-amount').value);if(!s){toast('Fournisseur requis','error');return;}if(!a){toast('Montant requis','error');return;}post('/api/invoice/create',{supplier_name:s,invoice_ref:document.getElementById('m-ref').value,invoice_date:document.getElementById('m-date').value,due_date:document.getElementById('m-due').value,amount:a,currency:document.getElementById('m-currency').value,payment_status:document.getElementById('m-status').value,notes:document.getElementById('m-notes').value}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Facture ajoutee!','success');['m-supplier','m-ref','m-date','m-due','m-amount','m-notes'].forEach(id=>document.getElementById(id).value='');}).catch(e=>toast('Erreur: '+e,'error'));}
+function saveExtractedInvoice(){post('/api/invoice/create',{supplier_name:document.getElementById('ex-supplier').value,invoice_ref:document.getElementById('ex-ref').value,invoice_date:document.getElementById('ex-date').value,due_date:document.getElementById('ex-due').value,amount:parseFloat(document.getElementById('ex-amount').value)||0,currency:document.getElementById('ex-currency').value,payment_status:document.getElementById('ex-status').value,category:document.getElementById('ex-category').value,notes:document.getElementById('ex-notes').value,original_filename:uploadedFilename}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Facture enregistree!','success');resetUpload();}).catch(e=>toast('Erreur: '+e,'error'));}
+function saveManualInvoice(){const s=document.getElementById('m-supplier').value;const a=parseFloat(document.getElementById('m-amount').value);if(!s){toast('Fournisseur requis','error');return;}if(!a){toast('Montant requis','error');return;}post('/api/invoice/create',{supplier_name:s,invoice_ref:document.getElementById('m-ref').value,invoice_date:document.getElementById('m-date').value,due_date:document.getElementById('m-due').value,amount:a,currency:document.getElementById('m-currency').value,payment_status:document.getElementById('m-status').value,category:document.getElementById('m-category').value,notes:document.getElementById('m-notes').value}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Facture ajoutee!','success');['m-supplier','m-ref','m-date','m-due','m-amount','m-notes','m-category'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});}).catch(e=>toast('Erreur: '+e,'error'));}
 function resetUpload(){document.getElementById('extract-card').style.display='none';document.getElementById('ai-warning').style.display='none';document.getElementById('inv-file').value='';uploadedFilename='';}
 
 /* ── Invoices CRUD ───────────────────────────────────────── */
-function loadInvoices(){const p=new URLSearchParams();const v=id=>document.getElementById(id).value;if(v('f-status'))p.set('status',v('f-status'));if(v('f-currency'))p.set('currency',v('f-currency'));if(v('f-supplier'))p.set('supplier',v('f-supplier'));if(v('f-from'))p.set('date_from',v('f-from'));if(v('f-to'))p.set('date_to',v('f-to'));api('/api/invoice/list?'+p).then(d=>{const tb=document.getElementById('inv-tbody');if(!d.invoices?.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Aucune facture.</td></tr>';return;}tb.innerHTML=d.invoices.map(i=>{const b=i.payment_status==='paid'?'badge-paid':i.payment_status==='overdue'?'badge-overdue':i.payment_status==='uncertain'?'badge-uncertain':'badge-unpaid';const l=i.payment_status==='paid'?'Payee':i.payment_status==='overdue'?'En retard':i.payment_status==='uncertain'?'Incertain':'Impayee';return `<tr><td>${i.invoice_date||'—'}</td><td style="font-weight:600;">${i.supplier_name}</td><td>${i.invoice_ref||'—'}</td><td style="text-align:right;font-weight:800;font-variant-numeric:tabular-nums;">${Number(i.amount).toLocaleString('fr-FR',{minimumFractionDigits:2})}</td><td>${i.currency}</td><td><span class="badge ${b}">${l}</span></td><td>${i.due_date||'—'}</td><td style="white-space:nowrap;"><button class="btn btn-outline btn-sm" onclick='editInvoice(${JSON.stringify(i)})' style="padding:5px 10px;">&#9998;</button> <button class="btn btn-danger btn-sm" onclick="deleteInvoice('${i.id}')" style="padding:5px 10px;">&#128465;</button></td></tr>`;}).join('');});}
-function clearFilters(){['f-status','f-currency','f-supplier','f-from','f-to'].forEach(id=>document.getElementById(id).value='');loadInvoices();}
-function editInvoice(i){document.getElementById('ed-id').value=i.id;document.getElementById('ed-supplier').value=i.supplier_name;document.getElementById('ed-ref').value=i.invoice_ref;document.getElementById('ed-date').value=i.invoice_date;document.getElementById('ed-due').value=i.due_date;document.getElementById('ed-amount').value=i.amount;document.getElementById('ed-currency').value=i.currency;document.getElementById('ed-status').value=i.payment_status;document.getElementById('ed-notes').value=i.notes||'';document.getElementById('edit-modal').classList.add('show');}
+/* Invoice categories — single source of truth, lazy-loaded once */
+let _invCats = null;
+let _invCatLabels = {};
+async function invCatLoad(){
+  if(_invCats) return _invCats;
+  try{
+    const d = await api('/api/invoice/categories');
+    _invCats = d.categories || [];
+    _invCatLabels = Object.fromEntries(_invCats.map(c=>[c.code, c.label]));
+    // Populate the filter dropdown
+    const fEl = document.getElementById('f-category');
+    if(fEl && fEl.options.length<=1){
+      _invCats.forEach(c=>{const o=document.createElement('option');o.value=c.code;o.textContent=c.label;fEl.appendChild(o);});
+    }
+  }catch(e){_invCats = [];}
+  return _invCats;
+}
+async function invCatPopulate(selectId){
+  await invCatLoad();
+  const el = document.getElementById(selectId);
+  if(!el) return;
+  // Keep the first "non classee" option, replace the rest
+  const keep = el.options[0];
+  el.innerHTML = '';
+  if(keep) el.appendChild(keep);
+  (_invCats||[]).forEach(c=>{const o=document.createElement('option');o.value=c.code;o.textContent=c.label;el.appendChild(o);});
+}
+function invCatBadge(code){
+  if(!code) return `<button class="btn btn-outline btn-sm" onclick="reclassifyInvoice(event)" data-cat-reclassify style="padding:3px 8px;font-size:10px;">IA ?</button>`;
+  const label = _invCatLabels[code] || code;
+  return `<span class="badge" style="background:var(--purple-soft,#ede9fe);color:var(--purple,#7c3aed);font-weight:700;font-size:10px;padding:3px 9px;border-radius:10px;">${escHtml(label)}</span>`;
+}
+
+function loadInvoices(){
+  invCatLoad();
+  const p=new URLSearchParams();
+  const v=id=>document.getElementById(id).value;
+  if(v('f-status'))p.set('status',v('f-status'));
+  if(v('f-currency'))p.set('currency',v('f-currency'));
+  if(v('f-supplier'))p.set('supplier',v('f-supplier'));
+  if(v('f-from'))p.set('date_from',v('f-from'));
+  if(v('f-to'))p.set('date_to',v('f-to'));
+  const fCat = v('f-category');
+  api('/api/invoice/list?'+p).then(d=>{
+    const tb=document.getElementById('inv-tbody');
+    let rows = d.invoices||[];
+    if(fCat) rows = rows.filter(i=>(i.category||'')===fCat);
+    if(!rows.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:32px;">Aucune facture.</td></tr>';return;}
+    tb.innerHTML = rows.map(i=>{
+      const b=i.payment_status==='paid'?'badge-paid':i.payment_status==='overdue'?'badge-overdue':i.payment_status==='uncertain'?'badge-uncertain':'badge-unpaid';
+      const l=i.payment_status==='paid'?'Payee':i.payment_status==='overdue'?'En retard':i.payment_status==='uncertain'?'Incertain':'Impayee';
+      const cat = invCatBadge(i.category);
+      return `<tr data-inv-id="${i.id}">
+        <td>${i.invoice_date||'—'}</td>
+        <td style="font-weight:600;">${escHtml(i.supplier_name)}</td>
+        <td>${escHtml(i.invoice_ref)||'—'}</td>
+        <td style="text-align:right;font-weight:800;font-variant-numeric:tabular-nums;">${Number(i.amount).toLocaleString('fr-FR',{minimumFractionDigits:2})}</td>
+        <td>${i.currency}</td>
+        <td><span class="badge ${b}">${l}</span></td>
+        <td>${cat}</td>
+        <td>${i.due_date||'—'}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-outline btn-sm" onclick='editInvoice(${JSON.stringify(i).replace(/'/g,"&apos;")})' style="padding:5px 10px;">&#9998;</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteInvoice('${i.id}')" style="padding:5px 10px;">&#128465;</button>
+        </td>
+      </tr>`;
+    }).join('');
+  });
+}
+function clearFilters(){['f-status','f-currency','f-category','f-supplier','f-from','f-to'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});loadInvoices();}
+async function editInvoice(i){
+  await invCatPopulate('ed-category');
+  document.getElementById('ed-id').value=i.id;
+  document.getElementById('ed-supplier').value=i.supplier_name;
+  document.getElementById('ed-ref').value=i.invoice_ref;
+  document.getElementById('ed-date').value=i.invoice_date;
+  document.getElementById('ed-due').value=i.due_date;
+  document.getElementById('ed-amount').value=i.amount;
+  document.getElementById('ed-currency').value=i.currency;
+  document.getElementById('ed-status').value=i.payment_status;
+  document.getElementById('ed-category').value=i.category||'';
+  document.getElementById('ed-notes').value=i.notes||'';
+  document.getElementById('edit-modal').classList.add('show');
+}
 function closeModal(){document.getElementById('edit-modal').classList.remove('show');}
-function saveEdit(){post('/api/invoice/update',{id:document.getElementById('ed-id').value,supplier_name:document.getElementById('ed-supplier').value,invoice_ref:document.getElementById('ed-ref').value,invoice_date:document.getElementById('ed-date').value,due_date:document.getElementById('ed-due').value,amount:parseFloat(document.getElementById('ed-amount').value)||0,currency:document.getElementById('ed-currency').value,payment_status:document.getElementById('ed-status').value,notes:document.getElementById('ed-notes').value}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Mis a jour!','success');closeModal();loadInvoices();}).catch(e=>toast('Erreur: '+e,'error'));}
+function saveEdit(){
+  post('/api/invoice/update',{
+    id:document.getElementById('ed-id').value,
+    supplier_name:document.getElementById('ed-supplier').value,
+    invoice_ref:document.getElementById('ed-ref').value,
+    invoice_date:document.getElementById('ed-date').value,
+    due_date:document.getElementById('ed-due').value,
+    amount:parseFloat(document.getElementById('ed-amount').value)||0,
+    currency:document.getElementById('ed-currency').value,
+    payment_status:document.getElementById('ed-status').value,
+    category:document.getElementById('ed-category').value,
+    notes:document.getElementById('ed-notes').value,
+  }).then(d=>{
+    if(d.error){toast(d.error,'error');return;}
+    toast('Mis a jour!','success');closeModal();loadInvoices();
+  }).catch(e=>toast('Erreur: '+e,'error'));
+}
 function deleteInvoice(id){if(!confirm('Supprimer?'))return;post('/api/invoice/delete',{id}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Supprimee','success');loadInvoices();}).catch(e=>toast('Erreur: '+e,'error'));}
+
+/* Re-classify an invoice with the AI (uses metadata, not vision) */
+async function reclassifyInvoice(ev){
+  const btn = ev.target.closest('button[data-cat-reclassify]');
+  if(!btn) return;
+  const tr = btn.closest('tr');
+  const invId = tr && tr.getAttribute('data-inv-id');
+  if(!invId) return;
+  btn.disabled = true; btn.textContent = '…';
+  try{
+    const d = await post('/api/invoice/classify',{id:invId});
+    if(d.error){toast(d.error,'error',5000); btn.disabled=false; btn.textContent='IA ?'; return;}
+    const label = _invCatLabels[d.category] || d.category;
+    toast(`Categorisee : ${label} (${Math.round((d.confidence||0)*100)}%)`,'success');
+    loadInvoices();
+  }catch(e){toast('Erreur: '+e,'error'); btn.disabled=false; btn.textContent='IA ?';}
+}
 
 /* ── Finances ────────────────────────────────────────────── */
 function loadBalances(){api('/api/finance/balances').then(d=>{const el=document.getElementById('balances-list');if(!d.accounts?.length){el.innerHTML='<p style="color:var(--muted);padding:16px 0;">Aucun compte configure.</p>';return;}el.innerHTML=d.accounts.map(a=>`<div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--border-l);"><div style="flex:1;"><strong style="font-size:14px;">${a.name}</strong><span style="font-size:11px;color:var(--muted);margin-left:10px;background:var(--bg);padding:2px 8px;border-radius:4px;">${a.type==='bank'?'Banque':'Caisse'} — ${a.currency}</span></div><input type="number" step="0.01" class="input" style="width:160px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;" value="${a.balance}" onchange="updateBalance('${a.id}',this.value)"><span style="font-weight:700;font-size:13px;color:var(--text-sec);">${a.currency}</span><button class="btn btn-danger btn-sm" onclick="deleteAccount('${a.id}')" style="padding:5px 10px;">&#128465;</button></div>`).join('');});}
