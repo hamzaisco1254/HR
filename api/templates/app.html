@@ -1622,6 +1622,48 @@ select{cursor:pointer;appearance:none;
       <div id="st-exp-cat-table"></div>
     </div>
   </div>
+
+  <!-- ═══ FORECAST + RISK ALERTS + AI ASSISTANT ═══ -->
+  <div class="card" style="margin-top:20px;">
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+      <h3 style="margin:0;flex:1;">Projections financieres
+        <span style="background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;font-size:9px;padding:2px 7px;border-radius:10px;font-weight:800;letter-spacing:.5px;margin-left:6px;">IA</span>
+      </h3>
+      <select class="form-select" id="fc-months" onchange="loadForecast()" style="max-width:140px;">
+        <option value="3">3 mois</option>
+        <option value="6" selected>6 mois</option>
+        <option value="12">12 mois</option>
+      </select>
+    </div>
+    <p id="fc-method-note" style="font-size:11px;color:var(--muted);margin-top:6px;"></p>
+    <div style="position:relative;height:320px;margin-top:14px;"><canvas id="fc-chart"></canvas></div>
+    <div id="fc-detail" style="margin-top:14px;"></div>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <h3>Alertes &amp; risques</h3>
+    <p style="font-size:11px;color:var(--muted);margin-top:4px;">Detection automatique basee sur vos donnees actuelles.</p>
+    <div id="fc-alerts" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- AI Finance Assistant -->
+  <div class="card" style="margin-top:20px;background:linear-gradient(135deg,var(--bg) 0%, #faf5ff 100%);">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--pink),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:14px;">MH</div>
+      <div>
+        <h3 style="margin:0;">Mr Hamza — Assistant financier IA</h3>
+        <p style="font-size:11px;color:var(--muted);margin:2px 0 0;">Pose une question sur tes finances ou choisis un raccourci ci-dessous.</p>
+      </div>
+    </div>
+    <div id="fa-suggestions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;"></div>
+    <div id="fa-messages" style="margin-top:16px;max-height:400px;overflow-y:auto;background:var(--card-bg,white);border:1px solid var(--border-l);border-radius:var(--radius);padding:14px;font-size:13px;"></div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <input type="text" class="input" id="fa-input" placeholder="Ex: Quel est notre cash flow prevu pour le prochain trimestre ?" style="flex:1;" onkeydown="if(event.key==='Enter')faAsk()">
+      <button class="btn btn-pink" id="fa-send-btn" onclick="faAsk()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        Envoyer</button>
+    </div>
+  </div>
 </div>
 
 
@@ -3359,6 +3401,11 @@ async function loadStatements(){
   _stRenderRevByClient(revBreak);
   _stRenderRevByDept(revBreak);
   _stRenderExpByCategory(expBreak);
+
+  // Also refresh forecast + alerts + assistant if elements exist
+  loadForecast();
+  loadFinanceAlerts();
+  loadAssistantSuggestions();
 }
 
 function _stRenderMargins(pnl){
@@ -3504,6 +3551,167 @@ function _stRenderExpByCategory(eb){
   const total = eb.grand_total || 1;
   document.getElementById('st-exp-cat-table').innerHTML =
     `<table class="tbl" style="margin:0;"><thead><tr><th>Categorie</th><th style="text-align:right;">Montant</th><th style="text-align:right;">%</th></tr></thead><tbody>${data.map(r=>`<tr><td>${escHtml(labelOf(r.category))}</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_stFmt(r.amount_tnd)}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${Math.round(100*r.amount_tnd/total)}%</td></tr>`).join('')}</tbody></table><div style="margin-top:8px;font-size:11px;color:var(--muted);text-align:right;">Total : <strong>${_stFmt(total)}</strong></div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FORECAST + RISK ALERTS + AI ASSISTANT
+   ══════════════════════════════════════════════════════════════ */
+async function loadForecast(){
+  const months = document.getElementById('fc-months')?.value || 6;
+  let d;
+  try{ d = await api('/api/finance/forecast?months='+months); }
+  catch(e){ return; }
+  const cf = d.cashflow;
+  if(!cf || !cf.forecast){return;}
+
+  // Build labels
+  const labels = cf.forecast.map(m => _stMonthLabels[m.month-1]+'-'+String(m.year).slice(-2));
+
+  _stDestroy('fc-chart');
+  const ctx = document.getElementById('fc-chart').getContext('2d');
+  _stCharts['fc-chart'] = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        // Revenue band (high - filled to low via stack illusion)
+        { type:'line', label:'Revenu attendu', data: cf.forecast.map(m=>m.revenue_exp),
+          borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.15)', fill:'+1', tension:0.25, pointRadius:3, borderWidth:2 },
+        { type:'line', label:'Revenu (min)',   data: cf.forecast.map(m=>m.revenue_low),
+          borderColor:'transparent', backgroundColor:'transparent', fill:false, pointRadius:0, hidden:true },
+        { type:'line', label:'Depenses attendues', data: cf.forecast.map(m=>m.expense_exp),
+          borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,0.12)', fill:false, tension:0.25, pointRadius:3, borderWidth:2 },
+        { type:'line', label:'Net (cumule)', data: cf.forecast.map(m=>m.cumulative_expected),
+          borderColor:'#7c3aed', backgroundColor:'rgba(124,58,237,0.10)', fill:false, tension:0.25, pointRadius:4, borderWidth:3, borderDash:[6,4] },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{position:'bottom',labels:{font:{size:11},filter:item=>item.text!=='Revenu (min)'}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+_stFmt(c.raw)}}
+      },
+      scales:{y:{ticks:{callback:v=>_stFmt(v)}}}
+    }
+  });
+
+  // Method + confidence note
+  document.getElementById('fc-method-note').innerHTML =
+    `<strong>Methode CA :</strong> ${escHtml(cf.method_used.revenue)}. ${escHtml(cf.confidence.revenue)}<br>
+     <strong>Methode depenses :</strong> ${escHtml(cf.method_used.expense)}. ${escHtml(cf.confidence.expense)}`;
+
+  // Tabular detail
+  const rows = cf.forecast.map(m=>`<tr>
+    <td>${_stMonthLabels[m.month-1]} ${m.year}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums;color:#065f46;">${_stFmt(m.revenue_exp)}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums;color:#991b1b;">${_stFmt(m.expense_exp)}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:${m.net_expected>=0?'#065f46':'#991b1b'};">${m.net_expected>=0?'+':''}${_stFmt(m.net_expected)}</td>
+    <td style="text-align:right;font-variant-numeric:tabular-nums;font-style:italic;color:var(--muted);">(${_stFmt(m.net_low)} ... ${_stFmt(m.net_high)})</td>
+  </tr>`).join('');
+  document.getElementById('fc-detail').innerHTML =
+    `<table class="tbl" style="margin:0;"><thead><tr><th>Mois</th><th>Revenu</th><th>Depenses</th><th>Net</th><th>Fourchette (min ... max)</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function loadFinanceAlerts(){
+  let d;
+  try{ d = await api('/api/finance/risk'); }
+  catch(e){ return; }
+  const el = document.getElementById('fc-alerts');
+  if(!d.alerts || !d.alerts.length){
+    el.innerHTML = `<div style="background:#d1fae5;color:#065f46;padding:14px;border-radius:var(--radius-xs);font-size:12px;border-left:4px solid #10b981;">✓ Aucun signal de risque detecte dans les donnees actuelles.</div>`;
+    return;
+  }
+  const sevColors = {
+    high: {bg:'#fee2e2',col:'#991b1b',border:'#dc2626',label:'Eleve'},
+    med:  {bg:'#fef3c7',col:'#92400e',border:'#d97706',label:'Moyen'},
+    low:  {bg:'#dbeafe',col:'#1e40af',border:'#3b82f6',label:'Info'},
+  };
+  el.innerHTML = d.alerts.map(a=>{
+    const s = sevColors[a.severity] || sevColors.low;
+    return `<div style="background:${s.bg};color:${s.col};padding:12px 14px;border-radius:var(--radius-xs);font-size:12px;border-left:4px solid ${s.border};margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-weight:900;font-size:9px;text-transform:uppercase;letter-spacing:1px;background:${s.border};color:#fff;padding:2px 7px;border-radius:8px;">${s.label}</span>
+        <strong>${escHtml(a.title)}</strong>
+      </div>
+      <div style="font-size:11px;margin-top:4px;">${escHtml(a.detail)}</div>
+    </div>`;
+  }).join('');
+}
+
+let _faHistory = [];
+async function loadAssistantSuggestions(){
+  const el = document.getElementById('fa-suggestions');
+  if(el && !el.dataset.loaded){
+    try{
+      const d = await api('/api/finance/assistant/suggestions');
+      // Use data attribute + delegation to avoid quote-escaping bugs
+      el.innerHTML = (d.questions||[]).map(q=>
+        `<button class="btn btn-outline btn-sm fa-suggestion" style="font-size:11px;padding:6px 10px;" data-q="${escHtml(q)}">${escHtml(q)}</button>`
+      ).join('');
+      el.querySelectorAll('.fa-suggestion').forEach(b=>{
+        b.addEventListener('click', ev=>{
+          const q = ev.currentTarget.getAttribute('data-q') || '';
+          // Decode HTML entities by setting via textarea trick
+          const t = document.createElement('textarea'); t.innerHTML = q;
+          faAskPredefined(t.value);
+        });
+      });
+      el.dataset.loaded = '1';
+    }catch(e){}
+  }
+}
+
+function faRender(){
+  const el = document.getElementById('fa-messages');
+  if(!_faHistory.length){
+    el.innerHTML = `<div style="color:var(--muted);font-size:11px;text-align:center;padding:30px;">Pose une question ou choisis une suggestion au-dessus.</div>`;
+    return;
+  }
+  el.innerHTML = _faHistory.map(m=>{
+    if(m.role==='user'){
+      return `<div style="display:flex;justify-content:flex-end;margin:8px 0;"><div style="background:var(--pink-soft,#fce7f3);color:var(--pink,#be185d);padding:10px 14px;border-radius:14px 14px 4px 14px;max-width:80%;font-size:13px;">${escHtml(m.text)}</div></div>`;
+    }
+    // Render markdown-ish: paragraphs from double newlines, line breaks from single
+    const safe = escHtml(m.text).replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');
+    return `<div style="display:flex;justify-content:flex-start;margin:8px 0;align-items:flex-start;gap:8px;">
+      <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--pink),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:10px;flex-shrink:0;">MH</div>
+      <div style="background:white;border:1px solid var(--border-l);padding:10px 14px;border-radius:14px 14px 14px 4px;max-width:85%;font-size:13px;line-height:1.5;"><p style="margin:0;">${safe}</p></div>
+    </div>`;
+  }).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function faAskPredefined(q){
+  document.getElementById('fa-input').value = q;
+  faAsk();
+}
+
+async function faAsk(){
+  const input = document.getElementById('fa-input');
+  const q = (input.value||'').trim();
+  if(!q) return;
+  input.value = '';
+  _faHistory.push({role:'user',  text:q});
+  _faHistory.push({role:'model', text:'…'});
+  faRender();
+  const btn = document.getElementById('fa-send-btn');
+  if(btn){btn.disabled=true;btn.style.opacity='0.6';}
+  try{
+    const d = await post('/api/finance/assistant/ask',{
+      question: q,
+      history: _faHistory.slice(0, -2),  // exclude the just-pushed user + placeholder
+    });
+    _faHistory.pop(); // remove placeholder
+    if(d.error){
+      _faHistory.push({role:'model', text:'⚠ '+d.error});
+    }else{
+      _faHistory.push({role:'model', text: d.answer || 'Pas de reponse generee.'});
+    }
+  }catch(e){
+    _faHistory.pop();
+    _faHistory.push({role:'model', text:'⚠ Erreur reseau: '+e});
+  }
+  if(btn){btn.disabled=false;btn.style.opacity='1';}
+  faRender();
 }
 
 /* ══════════════════════════════════════════════════════════════

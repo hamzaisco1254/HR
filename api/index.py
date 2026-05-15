@@ -50,6 +50,8 @@ from project_store import ProjectStore
 from income_store import IncomeStore
 from planned_expense_store import PlannedExpenseStore, get_finance_rates, set_finance_rates
 import statements_engine
+import forecast_engine
+import finance_assistant
 from rag_store import RagStore, CATEGORIES as RAG_CATEGORIES
 import outlook_agent
 from gemini_client import generate as gemini_generate, is_configured as gemini_configured
@@ -1403,6 +1405,65 @@ def api_statements_margins():
 def api_statements_variance():
     year, _m = _stmt_year_month()
     return jsonify(statements_engine.compute_planned_variance(fx_rates, year))
+
+
+# ─── Forecast & risk ─────────────────────────────────────────────
+
+@app.route('/api/finance/forecast', methods=['GET'])
+@login_required
+def api_finance_forecast():
+    try:
+        months = int(request.args.get('months') or 6)
+        if months < 1: months = 1
+        if months > 12: months = 12
+    except (TypeError, ValueError):
+        months = 6
+    method = (request.args.get('method') or '').strip().lower() or None
+    return jsonify({
+        'revenue':  forecast_engine.compute_revenue_forecast(fx_rates, months, method),
+        'expense':  forecast_engine.compute_expense_forecast(fx_rates, months, method),
+        'cashflow': forecast_engine.compute_cashflow_forecast(fx_rates, months),
+    })
+
+
+@app.route('/api/finance/risk', methods=['GET'])
+@login_required
+def api_finance_risk():
+    return jsonify({'alerts': forecast_engine.compute_risk_alerts(fx_rates)})
+
+
+# ─── Finance AI assistant ────────────────────────────────────────
+
+@app.route('/api/finance/assistant/suggestions', methods=['GET'])
+@login_required
+def api_finance_assistant_suggestions():
+    return jsonify({'questions': finance_assistant.SUGGESTED_QUESTIONS})
+
+
+@app.route('/api/finance/assistant/ask', methods=['POST'])
+@login_required
+@rate_limit(tag='fin_assistant', max_requests=30, window_seconds=60, by='user')
+@audit(action='finance.assistant.ask', entity='finance_question')
+def api_finance_assistant_ask():
+    data = request.get_json(force=True) or {}
+    question = (data.get('question') or '').strip()
+    if not question:
+        return jsonify({'error': 'Question vide'}), 400
+    if len(question) > 600:
+        question = question[:600]
+    history = data.get('history') or []
+    # Normalize history to {role, text}
+    norm_hist = []
+    for m in history[-6:]:
+        role = m.get('role') or 'user'
+        if role not in ('user', 'model', 'assistant'):
+            role = 'user'
+        norm_hist.append({
+            'role': 'model' if role in ('model', 'assistant') else 'user',
+            'text': (m.get('text') or m.get('content') or '')[:1500],
+        })
+    result = finance_assistant.ask(fx_rates, question, history=norm_hist)
+    return jsonify(result)
 
 
 # ═══════════════════════════════════════════════════════════════════
