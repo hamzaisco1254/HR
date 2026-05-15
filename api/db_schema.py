@@ -358,6 +358,37 @@ CREATE INDEX IF NOT EXISTS cust_inv_project_idx    ON customer_invoices (project
 CREATE INDEX IF NOT EXISTS cust_inv_status_idx     ON customer_invoices (status);
 CREATE UNIQUE INDEX IF NOT EXISTS cust_inv_ref_unique ON customer_invoices (invoice_ref) WHERE invoice_ref IS NOT NULL AND invoice_ref <> '';
 
+-- ── Planned / recurring expenses (PR-5) ────────────────────────
+-- Commitments not yet captured by a vendor invoice. Used to build
+-- forward-looking P&L lines and variance vs actual.
+-- One-time entries: due_date set, end_date NULL.
+-- Recurring entries: start_date + end_date span the validity window,
+--   and statements_engine expands them into per-month occurrences.
+CREATE TABLE IF NOT EXISTS planned_expenses (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    category        TEXT NOT NULL DEFAULT 'autre',     -- reuses INVOICE_CATEGORIES codes
+    amount          NUMERIC(15, 2) NOT NULL DEFAULT 0,
+    currency        TEXT NOT NULL DEFAULT 'TND',
+    fx_rate         NUMERIC(15, 6),                    -- source→TND at create time (NULL if TND)
+    amount_tnd      NUMERIC(15, 2),                    -- pre-computed TND for stability
+    is_recurring    BOOLEAN NOT NULL DEFAULT FALSE,
+    frequency       TEXT,                              -- 'monthly'|'quarterly'|'yearly' when recurring
+    start_date      DATE,                              -- inclusive (recurring or one-time-as-start)
+    end_date        DATE,                              -- inclusive (recurring); NULL = open-ended
+    due_date        DATE,                              -- for one-time entries
+    status          TEXT NOT NULL DEFAULT 'planned',   -- planned|paid|cancelled
+    department_id   TEXT REFERENCES departments(id) ON DELETE SET NULL,
+    linked_invoice_id TEXT REFERENCES invoices(id) ON DELETE SET NULL,
+    notes           TEXT,
+    created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS planned_exp_status_idx   ON planned_expenses (status);
+CREATE INDEX IF NOT EXISTS planned_exp_category_idx ON planned_expenses (category);
+CREATE INDEX IF NOT EXISTS planned_exp_dates_idx    ON planned_expenses (start_date, end_date, due_date);
+
 -- ── Project assignments (N:M employee <-> project) ─────────────
 CREATE TABLE IF NOT EXISTS project_assignments (
     id              TEXT PRIMARY KEY,

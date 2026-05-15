@@ -24,6 +24,7 @@ from datetime import datetime, date
 from typing import Dict, List, Optional
 
 import db
+from planned_expense_store import PlannedExpenseStore, get_finance_rates
 
 
 # Category → P&L bucket mapping (French standard)
@@ -113,21 +114,40 @@ def _salary_aggregate_tnd(fx_rates, months: int) -> float:
 
 # ─── Public API ──────────────────────────────────────────────────────
 
-def compute_pnl(fx_rates, year: int, month: Optional[int] = None, basis: str = 'accrual') -> Dict:
+def _period_bounds(year: int, month: Optional[int]) -> tuple:
+    """Return (start_date, end_date) inclusive for the requested period."""
+    import calendar
+    if month:
+        last = calendar.monthrange(year, month)[1]
+        return date(year, month, 1), date(year, month, last)
+    return date(year, 1, 1), date(year, 12, 31)
+
+
+def compute_pnl(fx_rates, year: int, month: Optional[int] = None, basis: str = 'accrual',
+                include_planned: bool = True) -> Dict:
     """French-style P&L for the period.
 
     basis='accrual': revenue = sum of customer_invoices.amount_tnd
     basis='cash':    revenue = sum of customer_invoices.received_tnd
 
+    The cascade now includes three accrual lines on top of recorded invoices:
+      - planned expenses falling in the period (only those NOT yet materialized
+        into a real invoice, to avoid double-counting)
+      - CNSS employer contribution = personnel_base * cnss_employer_rate%
+      - Corporate tax provision    = max(0, operating_income) * corporate_tax_rate%
+
     Returns:
         {
-          period: {year, month, basis, months_covered},
+          period: {year, month, basis, months_covered, rates: {...}},
           revenue: float,
           expenses_by_bucket: { bucket_id: {label, amount, items: [...]} },
           totals: {
-            charges_externes, charges_personnel, taxes, charges_financieres,
-            total_expenses, ebitda, operating_income, net_result
+            charges_externes, charges_personnel, cnss_employer, taxes,
+            charges_financieres, planned_extra_charges_externes,
+            total_expenses, ebitda, operating_income,
+            net_before_tax, corporate_tax_provision, net_result
           },
+          planned: {total, by_category},
           notes: [str, ...]
         }
     """
@@ -141,7 +161,7 @@ def compute_pnl(fx_rates, year: int, month: Optional[int] = None, basis: str = '
     months_covered = _months_in_period(year, month)
     salary_est_tnd = _salary_aggregate_tnd(fx_rates, months_covered)
 
-    # Bucket expenses by category
+    # Bucket vendor invoices by category
     buckets: Dict[str, Dict] = {bk: {'label': lbl, 'amount': 0.0, 'items': []}
                                   for bk, lbl in _BUCKET_LABELS}
 
@@ -155,6 +175,7 @@ def compute_pnl(fx_rates, year: int, month: Optional[int] = None, basis: str = '
             'amount_tnd': amt,
             'supplier_name': inv.get('supplier_name') or '',
             'invoice_date': str(inv.get('invoice_date') or ''),
+            'source': 'invoice',
         })
 
     # Add salary aggregate to charges_personnel
@@ -163,20 +184,68 @@ def compute_pnl(fx_rates, year: int, month: Optional[int] = None, basis: str = '
         buckets['charges_personnel']['items'].append({
             'category': 'salaires_estimes',
             'amount_tnd': salary_est_tnd,
-            'supplier_name': f'Salaires (estimes, {months_covered} mois)',
+            'supplier_name': f'Salaires bruts (estimes, {months_covered} mois)',
             'invoice_date': '',
+            'source': 'salary_estimate',
+        })
+
+    # ─── Planned expenses (uninvoiced commitments) ──────────────
+    planned_total = 0.0
+    planned_by_cat: Dict[str, float] = {}
+    if include_planned:
+        period_start, period_end = _period_bounds(year, month)
+        pes = PlannedExpenseStore(fx_rates=fx_rates)
+        for occ in pes.occurrences(period_start, period_end, only_pending=True):
+            cat    = (occ.get('category') or 'autre').lower()
+            bucket = _CATEGORY_BUCKETS.get(cat, 'charges_externes')
+            amt    = float(occ.get('amount_tnd') or 0)
+            buckets[bucket]['amount'] += amt
+            buckets[bucket]['items'].append({
+                'category': cat,
+                'amount_tnd': amt,
+                'supplier_name': occ.get('name') or 'Depense prevue',
+                'invoice_date': occ.get('occurrence_date') or '',
+                'source': 'planned',
+            })
+            planned_total += amt
+            planned_by_cat[cat] = planned_by_cat.get(cat, 0.0) + amt
+
+    # ─── CNSS employer contribution ─────────────────────────────
+    rates = get_finance_rates()
+    cnss_rate = float(rates.get('cnss_employer_rate', 0) or 0) / 100.0
+    # Base: salaire estime + salaires invoices (categories='salaires')
+    personnel_for_cnss = salary_est_tnd
+    for item in buckets['charges_personnel']['items']:
+        if item.get('category') in ('salaires',):
+            personnel_for_cnss += item['amount_tnd']
+    cnss_employer = max(0.0, personnel_for_cnss * cnss_rate)
+    if cnss_employer > 0:
+        buckets['charges_personnel']['amount'] += cnss_employer
+        buckets['charges_personnel']['items'].append({
+            'category': 'cnss_employer',
+            'amount_tnd': cnss_employer,
+            'supplier_name': f'Cotisations CNSS employeur ({rates.get("cnss_employer_rate", 0):.2f}%)',
+            'invoice_date': '',
+            'source': 'cnss_provision',
         })
 
     charges_externes      = buckets['charges_externes']['amount']
     charges_personnel     = buckets['charges_personnel']['amount']
     taxes_amt             = buckets['taxes']['amount']
     charges_financieres   = buckets['charges_financieres']['amount']
-    total_expenses        = charges_externes + charges_personnel + taxes_amt + charges_financieres
 
     # French P&L cascade
     ebitda           = revenue - charges_externes - charges_personnel
     operating_income = ebitda  # no D&A modeled
-    net_result       = operating_income - taxes_amt - charges_financieres
+    net_before_tax   = operating_income - charges_financieres - taxes_amt
+
+    # Corporate tax provision on positive pre-tax result only
+    is_rate = float(rates.get('corporate_tax_rate', 0) or 0) / 100.0
+    corporate_tax_provision = max(0.0, net_before_tax) * is_rate
+    net_result = net_before_tax - corporate_tax_provision
+
+    total_expenses = (charges_externes + charges_personnel + taxes_amt
+                      + charges_financieres + corporate_tax_provision)
 
     notes = []
     if any(_norm(r.get('amount'), fx_rates, r.get('currency') or 'TND') != float(r.get('amount') or 0)
@@ -184,24 +253,39 @@ def compute_pnl(fx_rates, year: int, month: Optional[int] = None, basis: str = '
         notes.append("Les depenses en devises etrangeres sont converties au taux actuel (non historise).")
     if salary_est_tnd > 0:
         notes.append(f"Les salaires sont estimes a partir des fiches employes ({months_covered} mois).")
+    if cnss_employer > 0:
+        notes.append(f"Cotisation patronale CNSS calculee a {rates.get('cnss_employer_rate', 0):.2f}% de la masse salariale brute.")
+    if planned_total > 0:
+        notes.append(f"Inclut {planned_total:,.0f} TND de depenses prevues (non encore facturees).".replace(',', ' '))
+    if corporate_tax_provision > 0:
+        notes.append(f"Provision IS calculee a {rates.get('corporate_tax_rate', 0):.2f}% du resultat avant impot.")
     notes.append("Aucune dotation aux amortissements modelisee (resultat operationnel = EBITDA).")
 
     return {
         'period': {
             'year': year, 'month': month, 'basis': basis,
             'months_covered': months_covered,
+            'rates': rates,
         },
         'revenue': revenue,
         'expenses_by_bucket': buckets,
         'totals': {
-            'charges_externes':    charges_externes,
-            'charges_personnel':   charges_personnel,
-            'taxes':               taxes_amt,
-            'charges_financieres': charges_financieres,
-            'total_expenses':      total_expenses,
-            'ebitda':              ebitda,
-            'operating_income':    operating_income,
-            'net_result':          net_result,
+            'charges_externes':         charges_externes,
+            'charges_personnel':        charges_personnel,
+            'cnss_employer':            cnss_employer,
+            'taxes':                    taxes_amt,
+            'charges_financieres':      charges_financieres,
+            'planned_included':         planned_total,
+            'total_expenses':           total_expenses,
+            'ebitda':                   ebitda,
+            'operating_income':         operating_income,
+            'net_before_tax':           net_before_tax,
+            'corporate_tax_provision':  corporate_tax_provision,
+            'net_result':               net_result,
+        },
+        'planned': {
+            'total':       planned_total,
+            'by_category': planned_by_cat,
         },
         'notes': notes,
     }
@@ -272,15 +356,119 @@ def compute_cashflow(fx_rates, year: int) -> Dict:
         'net_cf':       sum(x['net_cf']       for x in months_data),
     }
 
-    notes = ["Inflows = paiements clients encaisses; Outflows = factures fournisseurs payees + salaires."]
+    # Planned-expense outflows by month (uninvoiced commitments)
+    pes = PlannedExpenseStore(fx_rates=fx_rates)
+    planned_by_month: Dict[int, float] = {}
+    period_start = date(year, 1, 1)
+    period_end   = date(year, 12, 31)
+    for occ in pes.occurrences(period_start, period_end, only_pending=True):
+        d = datetime.strptime(occ['occurrence_date'], '%Y-%m-%d').date()
+        planned_by_month[d.month] = planned_by_month.get(d.month, 0.0) + occ['amount_tnd']
+    # Fold planned outflows into expenses_out + re-derive net_cf
+    for m in months_data:
+        extra = planned_by_month.get(m['month'], 0.0)
+        if extra:
+            m['expenses_out'] += extra
+            m['net_cf']        = m['revenue_in'] - m['expenses_out']
+
+    total = {
+        'revenue_in':   sum(x['revenue_in']   for x in months_data),
+        'expenses_out': sum(x['expenses_out'] for x in months_data),
+        'net_cf':       sum(x['net_cf']       for x in months_data),
+    }
+
+    notes = ["Inflows = paiements clients encaisses; Outflows = factures fournisseurs payees + salaires + depenses prevues."]
     if monthly_salary > 0:
         notes.append("Salaires estimes ajoutes uniformement sur chaque mois ecoule.")
+    if any(planned_by_month.values()):
+        notes.append("Depenses prevues (non facturees) incluses dans les sorties.")
 
     return {
         'year':   year,
         'months': months_data,
         'total':  total,
         'notes':  notes,
+    }
+
+
+def compute_planned_variance(fx_rates, year: int) -> Dict:
+    """Planned vs actual by month per category — the variance table.
+
+    Actual = vendor invoices (TND-normalized) for that month/category.
+    Planned = planned_expenses occurrences for that month/category
+              (regardless of pending/paid status — we want to compare).
+    """
+    # Pull all planned expenses (including paid ones, to compare against actual)
+    pes = PlannedExpenseStore(fx_rates=fx_rates)
+    period_start = date(year, 1, 1)
+    period_end   = date(year, 12, 31)
+    planned: Dict[int, Dict[str, float]] = {m: {} for m in range(1, 13)}
+    for occ in pes.occurrences(period_start, period_end, only_pending=False):
+        d = datetime.strptime(occ['occurrence_date'], '%Y-%m-%d').date()
+        cat = occ['category']
+        planned[d.month].setdefault(cat, 0.0)
+        planned[d.month][cat] += occ['amount_tnd']
+
+    # Pull actual invoices for the year
+    actual: Dict[int, Dict[str, float]] = {m: {} for m in range(1, 13)}
+    rows = db.query(
+        """SELECT invoice_date, amount, currency, category
+             FROM invoices
+            WHERE invoice_date IS NOT NULL
+              AND EXTRACT(YEAR FROM invoice_date) = %s""",
+        (year,),
+    )
+    for r in rows:
+        m   = r['invoice_date'].month
+        cat = (r.get('category') or 'autre').lower()
+        amt = _norm(r.get('amount'), fx_rates, r.get('currency') or 'TND')
+        actual[m].setdefault(cat, 0.0)
+        actual[m][cat] += amt
+
+    # Build the response
+    all_cats = set()
+    for m in range(1, 13):
+        all_cats.update(planned[m].keys())
+        all_cats.update(actual[m].keys())
+    cats_sorted = sorted(all_cats)
+
+    months_out = []
+    totals_planned = 0.0
+    totals_actual  = 0.0
+    for m in range(1, 13):
+        cats_row = []
+        m_planned = 0.0
+        m_actual  = 0.0
+        for c in cats_sorted:
+            p = planned[m].get(c, 0.0)
+            a = actual[m].get(c, 0.0)
+            cats_row.append({
+                'category': c,
+                'planned':  p,
+                'actual':   a,
+                'delta':    a - p,
+            })
+            m_planned += p
+            m_actual  += a
+        months_out.append({
+            'month':         m,
+            'categories':    cats_row,
+            'total_planned': m_planned,
+            'total_actual':  m_actual,
+            'delta':         m_actual - m_planned,
+        })
+        totals_planned += m_planned
+        totals_actual  += m_actual
+
+    return {
+        'year':         year,
+        'categories':   cats_sorted,
+        'months':       months_out,
+        'year_total': {
+            'planned': totals_planned,
+            'actual':  totals_actual,
+            'delta':   totals_actual - totals_planned,
+        },
     }
 
 

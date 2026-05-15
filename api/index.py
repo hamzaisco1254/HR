@@ -48,6 +48,7 @@ from client_store import ClientStore
 from employee_store import DepartmentStore, EmployeeStore, strip_sensitive
 from project_store import ProjectStore
 from income_store import IncomeStore
+from planned_expense_store import PlannedExpenseStore, get_finance_rates, set_finance_rates
 import statements_engine
 from rag_store import RagStore, CATEGORIES as RAG_CATEGORIES
 import outlook_agent
@@ -182,6 +183,7 @@ department_store = DepartmentStore()
 employee_store   = EmployeeStore()
 project_store    = ProjectStore()
 income_store     = IncomeStore(fx_rates=fx_rates)
+planned_store    = PlannedExpenseStore(fx_rates=fx_rates)
 
 # ---------------------------------------------------------------------------
 # Cloud URL normalizer (exact copy of desktop)
@@ -1394,6 +1396,105 @@ def api_statements_expense_breakdown():
 def api_statements_margins():
     year, month = _stmt_year_month()
     return jsonify(statements_engine.compute_margins(fx_rates, year, month))
+
+
+@app.route('/api/finance/statements/variance', methods=['GET'])
+@login_required
+def api_statements_variance():
+    year, _m = _stmt_year_month()
+    return jsonify(statements_engine.compute_planned_variance(fx_rates, year))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# PLANNED EXPENSES API (PR-5)
+# Commitments not yet captured as vendor invoices (rent, software subs,
+# office relocation, taxes due, etc.). Used by statements_engine to
+# build forward-looking P&L lines and variance reports.
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route('/api/finance/planned', methods=['GET'])
+@login_required
+def api_planned_list():
+    filters = {
+        'status':   request.args.get('status')   or None,
+        'category': request.args.get('category') or None,
+        'year':     request.args.get('year')     or None,
+    }
+    return jsonify({'expenses': planned_store.list({k: v for k, v in filters.items() if v})})
+
+
+@app.route('/api/finance/planned', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='planned.create', entity='planned_expense')
+def api_planned_create():
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify({'status': 'ok', 'expense': planned_store.add(data, created_by=_current_user_id())})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/finance/planned/update', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='planned.update', entity='planned_expense', entity_arg='id')
+def api_planned_update():
+    data = request.get_json(force=True) or {}
+    eid = (data.pop('id', '') or '').strip()
+    try:
+        result = planned_store.update(eid, data)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if result is None:
+        return jsonify({'error': 'Depense prevue introuvable'}), 404
+    return jsonify({'status': 'ok', 'expense': result})
+
+
+@app.route('/api/finance/planned/delete', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='planned.delete', entity='planned_expense', entity_arg='id')
+def api_planned_delete():
+    data = request.get_json(force=True) or {}
+    if not planned_store.delete((data.get('id') or '').strip()):
+        return jsonify({'error': 'Depense prevue introuvable'}), 404
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/finance/planned/materialize', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='planned.materialize', entity='planned_expense', entity_arg='id')
+def api_planned_materialize():
+    data = request.get_json(force=True) or {}
+    try:
+        result = planned_store.materialize(
+            (data.get('id') or '').strip(),
+            (data.get('invoice_id') or '').strip(),
+        )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if result is None:
+        return jsonify({'error': 'Depense prevue introuvable'}), 404
+    return jsonify({'status': 'ok', 'expense': result})
+
+
+# ─── Finance rates (CNSS + corporate tax) ───────────────────────────
+
+@app.route('/api/finance/rates', methods=['GET'])
+@login_required
+def api_finance_rates():
+    return jsonify({'rates': get_finance_rates()})
+
+
+@app.route('/api/finance/rates', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='finance.rates.update', entity='finance_rates')
+def api_finance_rates_update():
+    data = request.get_json(force=True) or {}
+    return jsonify({'status': 'ok', 'rates': set_finance_rates(data)})
 
 
 # ═══════════════════════════════════════════════════════════════════

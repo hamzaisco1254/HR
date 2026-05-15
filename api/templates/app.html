@@ -895,6 +895,9 @@ select{cursor:pointer;appearance:none;
   <a href="#" onclick="showPage('statements',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
     Etats financiers</a>
+  <a href="#" onclick="showPage('planned',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    Depenses prevues</a>
   <a href="#" onclick="showPage('upload',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
     Upload Facture</a>
@@ -1622,6 +1625,146 @@ select{cursor:pointer;appearance:none;
 </div>
 
 
+<!-- ═══════════ FINANCE — DEPENSES PREVUES (Planned + Gantt) ═══════════ -->
+<style>
+.gantt-row{display:grid;grid-template-columns:240px repeat(12, 1fr);gap:2px;align-items:stretch;}
+.gantt-row .gantt-label{padding:8px 10px;font-size:11px;display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border-l);border-radius:var(--radius-xs);}
+.gantt-row .gantt-cell{min-height:36px;position:relative;border:1px dashed var(--border-l);border-radius:3px;background:rgba(0,0,0,0.02);}
+.gantt-row.gantt-header .gantt-cell{min-height:auto;padding:6px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;background:transparent;border:none;}
+.gantt-occ{position:absolute;top:4px;bottom:4px;left:4px;right:4px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;cursor:pointer;transition:transform .12s;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 6px;}
+.gantt-occ:hover{transform:scale(1.04);box-shadow:var(--shadow-sm);}
+.gantt-occ.status-paid{opacity:0.55;}
+.gantt-occ.status-cancelled{opacity:0.35;text-decoration:line-through;}
+.gantt-legend{display:flex;flex-wrap:wrap;gap:10px;font-size:10px;margin-top:14px;}
+.gantt-legend span{display:inline-flex;align-items:center;gap:4px;color:var(--muted);}
+.gantt-legend span::before{content:'';width:10px;height:10px;border-radius:2px;}
+.var-table{width:100%;border-collapse:collapse;font-size:11px;}
+.var-table th{background:var(--navy);color:#fff;padding:8px 6px;font-size:10px;text-transform:uppercase;letter-spacing:1px;}
+.var-table td{padding:6px 8px;border-bottom:1px solid var(--border-l);font-variant-numeric:tabular-nums;}
+.var-table td.cat{text-align:left;font-weight:700;}
+.var-table tr.row-total{background:var(--bg);font-weight:800;}
+.var-delta-pos{color:var(--red,#dc2626);}
+.var-delta-neg{color:var(--green,#059669);}
+</style>
+
+<div class="page" id="pg-planned">
+  <div class="page-header">
+    <h2>Depenses prevues</h2>
+    <p>Engagements non encore factures : loyer, salaires, abonnements, taxes, depenses ponctuelles. Inclus dans le P&amp;L et le cash flow.</p>
+  </div>
+
+  <!-- Finance rates panel -->
+  <div class="card" style="margin-bottom:18px;">
+    <h3>Taux de cotisations &amp; impots</h3>
+    <p style="font-size:11px;color:var(--muted);margin-top:4px;">Ces taux sont automatiquement appliques au P&amp;L pour les cotisations CNSS et la provision d'impot sur les societes.</p>
+    <div class="grid3" style="margin-top:12px;">
+      <div><label>Taux CNSS employeur (%)</label><input type="number" step="0.01" min="0" max="100" class="input" id="pe-rate-cnss" placeholder="16.57"></div>
+      <div><label>Taux CNSS salarie (info)</label><input type="number" step="0.01" min="0" max="100" class="input" id="pe-rate-cnss-emp" placeholder="9.18"></div>
+      <div><label>Taux IS / corporate (%)</label><input type="number" step="0.01" min="0" max="100" class="input" id="pe-rate-tax" placeholder="15.0"></div>
+    </div>
+    <div style="margin-top:12px;"><button class="btn btn-pink btn-sm" onclick="savePlannedRates()">Sauvegarder les taux</button></div>
+  </div>
+
+  <!-- Action bar -->
+  <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+    <button class="btn btn-pink" onclick="openPlannedModal()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nouvelle depense prevue</button>
+    <select class="form-select" id="pe-year" onchange="loadPlannedPage()" style="max-width:120px;"></select>
+    <select class="form-select" id="pe-filter-status" onchange="loadPlannedPage()" style="max-width:160px;">
+      <option value="">Tous statuts</option>
+      <option value="planned">Prevu</option>
+      <option value="paid">Paye</option>
+      <option value="cancelled">Annule</option>
+    </select>
+    <span id="pe-count" style="margin-left:auto;font-size:11px;color:var(--muted);"></span>
+  </div>
+
+  <!-- KPI summary tiles -->
+  <div class="grid4" style="margin-bottom:18px;">
+    <div class="kpi-tile" style="background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);padding:14px 18px;border-radius:var(--radius);border:1px solid #fbbf24;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#92400e;letter-spacing:1px;">Engagement total annee</div>
+      <div style="font-size:20px;font-weight:900;color:#78350f;margin-top:6px;" id="pe-kpi-total">— TND</div>
+    </div>
+    <div class="kpi-tile" style="background:linear-gradient(135deg,#dbeafe 0%,#bfdbfe 100%);padding:14px 18px;border-radius:var(--radius);border:1px solid #60a5fa;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#1e40af;letter-spacing:1px;">Engagements recurrents/mois</div>
+      <div style="font-size:20px;font-weight:900;color:#1e3a8a;margin-top:6px;" id="pe-kpi-recurring">— TND</div>
+    </div>
+    <div class="kpi-tile" style="background:linear-gradient(135deg,#fce7f3 0%,#fbcfe8 100%);padding:14px 18px;border-radius:var(--radius);border:1px solid #f9a8d4;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#9d174d;letter-spacing:1px;">Ponctuelles a venir</div>
+      <div style="font-size:20px;font-weight:900;color:#831843;margin-top:6px;" id="pe-kpi-onetime">— TND</div>
+    </div>
+    <div class="kpi-tile" style="background:linear-gradient(135deg,#d1fae5 0%,#a7f3d0 100%);padding:14px 18px;border-radius:var(--radius);border:1px solid #34d399;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#065f46;letter-spacing:1px;">Depenses prevues</div>
+      <div style="font-size:20px;font-weight:900;color:#064e3b;margin-top:6px;" id="pe-kpi-count">—</div>
+    </div>
+  </div>
+
+  <!-- Gantt timeline -->
+  <div class="card" style="margin-bottom:20px;">
+    <h3>Timeline (Gantt)</h3>
+    <p style="font-size:11px;color:var(--muted);margin-top:4px;">Survolez une barre pour le detail; cliquez pour modifier.</p>
+    <div id="pe-gantt" style="margin-top:14px;overflow-x:auto;"></div>
+    <div class="gantt-legend" id="pe-legend"></div>
+  </div>
+
+  <!-- Variance table -->
+  <div class="card">
+    <h3>Ecart prevu vs reel</h3>
+    <p style="font-size:11px;color:var(--muted);margin-top:4px;">Compare les depenses prevues (Gantt) aux factures fournisseurs reellement enregistrees, par categorie et par mois.</p>
+    <div id="pe-variance" style="overflow-x:auto;margin-top:14px;"></div>
+  </div>
+</div>
+
+<!-- ═══════ PLANNED EXPENSE MODAL ═══════ -->
+<div class="modal-overlay" id="pe-modal">
+  <div class="modal-box" style="max-width:680px;">
+    <h3 style="margin-bottom:18px;" id="pe-modal-title">Nouvelle depense prevue</h3>
+    <input type="hidden" id="pe-id">
+
+    <!-- Toggle one-time vs recurring -->
+    <div style="display:flex;gap:8px;margin-bottom:18px;background:var(--bg);padding:4px;border-radius:var(--radius-xs);">
+      <label style="flex:1;text-align:center;padding:8px;cursor:pointer;border-radius:var(--radius-xs);" id="pe-toggle-once">
+        <input type="radio" name="pe-type" value="once" checked onchange="peOnTypeChange()" style="display:none;">
+        <span style="font-weight:700;font-size:12px;">Ponctuelle</span>
+        <div style="font-size:10px;color:var(--muted);">Une seule fois</div>
+      </label>
+      <label style="flex:1;text-align:center;padding:8px;cursor:pointer;border-radius:var(--radius-xs);" id="pe-toggle-recur">
+        <input type="radio" name="pe-type" value="recurring" onchange="peOnTypeChange()" style="display:none;">
+        <span style="font-weight:700;font-size:12px;">Recurrente</span>
+        <div style="font-size:10px;color:var(--muted);">Mensuelle / trimestrielle / annuelle</div>
+      </label>
+    </div>
+
+    <div class="grid2">
+      <div style="grid-column:1/-1;"><label>Nom *</label><input class="input" id="pe-name" placeholder="Ex: Loyer bureau, Renouvellement licences, Demenagement"></div>
+      <div><label>Categorie</label><select class="form-select" id="pe-category"></select></div>
+      <div><label>Departement</label><select class="form-select" id="pe-dept"><option value="">-- Aucun --</option></select></div>
+      <div><label>Montant *</label><input type="number" step="0.01" min="0" class="input" id="pe-amount" oninput="peRecomputeTnd()"></div>
+      <div><label>Devise</label><select class="form-select" id="pe-currency" onchange="peRecomputeTnd()"><option>TND</option><option>EUR</option><option>USD</option></select></div>
+      <div><label>Taux de change (override)</label><input type="number" step="0.0001" class="input" id="pe-fx" oninput="peRecomputeTnd()" placeholder="Auto"></div>
+      <div><label>Montant TND</label><input type="number" step="0.01" class="input" id="pe-amount-tnd" readonly style="background:var(--bg);"></div>
+
+      <!-- One-time fields -->
+      <div id="pe-once-row" style="grid-column:1/-1;"><label>Date d'echeance *</label><input type="date" class="input" id="pe-due"></div>
+
+      <!-- Recurring fields -->
+      <div id="pe-freq-row" style="display:none;"><label>Frequence *</label><select class="form-select" id="pe-frequency"><option value="monthly">Mensuelle</option><option value="quarterly">Trimestrielle</option><option value="yearly">Annuelle</option></select></div>
+      <div id="pe-start-row" style="display:none;"><label>Date de debut *</label><input type="date" class="input" id="pe-start"></div>
+      <div id="pe-end-row"   style="display:none;"><label>Date de fin (vide = ouvert)</label><input type="date" class="input" id="pe-end"></div>
+
+      <div><label>Statut</label><select class="form-select" id="pe-status"><option value="planned">Prevu</option><option value="paid">Paye</option><option value="cancelled">Annule</option></select></div>
+      <div></div>
+      <div style="grid-column:1/-1;"><label>Notes</label><input class="input" id="pe-notes"></div>
+    </div>
+
+    <div style="margin-top:22px;display:flex;gap:10px;">
+      <button class="btn btn-pink" onclick="savePlanned()" style="flex:1;">Sauvegarder</button>
+      <button class="btn btn-outline" onclick="closeOrgModal('pe-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════ MR HAMZA — AI CHATBOT ═══════ -->
 <div class="page {% if active_tab=='chat' %}active{% endif %}" id="pg-chat">
   <div class="page-header">
@@ -1944,6 +2087,7 @@ function showPage(id,el){
   if(id==='upload'){invCatPopulate('m-category');}
   if(id==='income')loadIncomePage();
   if(id==='statements')loadStatementsPage();
+  if(id==='planned')loadPlannedPage();
 }
 const api=(u,o)=>fetch(u,o).then(r=>r.json());
 const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
@@ -3233,18 +3377,29 @@ function _stRenderMargins(pnl){
 function _stRenderPnl(pnl){
   const t = pnl.totals;
   const rev = pnl.revenue;
+  const planned = (pnl.totals && pnl.totals.planned_included) || 0;
   const fmt = v => `<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_stFmt2(v)}</td>`;
   const fmtNeg = v => `<td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--red,#dc2626);">(${_stFmt2(v)})</td>`;
+  const fmtSub = v => `<td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);font-size:11px;font-style:italic;">(${_stFmt2(v)})</td>`;
 
   const rows = [];
   rows.push(`<tr style="background:var(--purple-soft,#f3e8ff);"><td style="font-weight:900;">Chiffre d'affaires (revenu)</td>${fmt(rev)}</tr>`);
   rows.push(`<tr><td>− Charges externes</td>${fmtNeg(t.charges_externes)}</tr>`);
-  rows.push(`<tr><td>− Charges de personnel</td>${fmtNeg(t.charges_personnel)}</tr>`);
+  rows.push(`<tr><td>− Charges de personnel <span style="font-size:10px;color:var(--muted);">(inclut salaires + CNSS)</span></td>${fmtNeg(t.charges_personnel)}</tr>`);
+  if(t.cnss_employer>0){
+    rows.push(`<tr><td style="padding-left:24px;font-size:11px;color:var(--muted);">↳ dont CNSS employeur</td>${fmtSub(t.cnss_employer)}</tr>`);
+  }
   rows.push(`<tr style="background:var(--bg);font-weight:800;"><td>= EBITDA</td>${fmt(t.ebitda)}</tr>`);
   rows.push(`<tr><td>− Dotations aux amortissements</td>${fmtNeg(0)}</tr>`);
   rows.push(`<tr style="background:var(--bg);font-weight:800;"><td>= Resultat operationnel</td>${fmt(t.operating_income)}</tr>`);
-  rows.push(`<tr><td>− Impots et taxes</td>${fmtNeg(t.taxes)}</tr>`);
   rows.push(`<tr><td>− Charges financieres</td>${fmtNeg(t.charges_financieres)}</tr>`);
+  rows.push(`<tr><td>− Impots et taxes</td>${fmtNeg(t.taxes)}</tr>`);
+  if(t.net_before_tax !== undefined){
+    rows.push(`<tr style="background:var(--bg);font-weight:800;"><td>= Resultat avant impot</td>${fmt(t.net_before_tax)}</tr>`);
+    if(t.corporate_tax_provision>0){
+      rows.push(`<tr><td>− Provision impot societes</td>${fmtNeg(t.corporate_tax_provision)}</tr>`);
+    }
+  }
   const netColor = t.net_result >= 0 ? '#065f46' : '#991b1b';
   const netBg    = t.net_result >= 0 ? '#d1fae5' : '#fee2e2';
   rows.push(`<tr style="background:${netBg};color:${netColor};font-weight:900;font-size:14px;"><td>= Resultat net</td>${fmt(t.net_result)}</tr>`);
@@ -3349,6 +3504,308 @@ function _stRenderExpByCategory(eb){
   const total = eb.grand_total || 1;
   document.getElementById('st-exp-cat-table').innerHTML =
     `<table class="tbl" style="margin:0;"><thead><tr><th>Categorie</th><th style="text-align:right;">Montant</th><th style="text-align:right;">%</th></tr></thead><tbody>${data.map(r=>`<tr><td>${escHtml(labelOf(r.category))}</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_stFmt(r.amount_tnd)}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${Math.round(100*r.amount_tnd/total)}%</td></tr>`).join('')}</tbody></table><div style="margin-top:8px;font-size:11px;color:var(--muted);text-align:right;">Total : <strong>${_stFmt(total)}</strong></div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PLANNED EXPENSES — Gantt timeline + variance + rates
+   ══════════════════════════════════════════════════════════════ */
+let _peData = [];
+let _peRates = {};
+const _peMonths = ['Jan','Fev','Mar','Avr','Mai','Jun','Jul','Aou','Sep','Oct','Nov','Dec'];
+const _peCatColors = {
+  loyer:'#ec4899', salaires:'#7c3aed', logiciels:'#3b82f6', telecoms:'#06b6d4',
+  marketing:'#f59e0b', voyage:'#10b981', materiel:'#8b5cf6', fournitures:'#84cc16',
+  honoraires:'#a855f7', taxes:'#dc2626', banque:'#0891b2', energie:'#f97316',
+  maintenance:'#6366f1', autre:'#64748b',
+};
+function _peColor(cat){return _peCatColors[cat]||'#64748b';}
+function _peFmt(v){return (Number(v)||0).toLocaleString('fr-FR',{minimumFractionDigits:0,maximumFractionDigits:0})+' TND';}
+
+async function loadPlannedPage(){
+  // Year selector
+  const ySel = document.getElementById('pe-year');
+  if(ySel && ySel.options.length===0){
+    const now = new Date().getFullYear();
+    for(let y=now+1;y>=now-2;y--){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===now)o.selected=true;ySel.appendChild(o);}
+  }
+  await loadPlannedRates();
+  await loadPlannedList();
+  await loadPlannedVariance();
+}
+
+async function loadPlannedRates(){
+  const d = await api('/api/finance/rates');
+  _peRates = d.rates || {};
+  document.getElementById('pe-rate-cnss').value     = _peRates.cnss_employer_rate ?? '';
+  document.getElementById('pe-rate-cnss-emp').value = _peRates.cnss_employee_rate ?? '';
+  document.getElementById('pe-rate-tax').value      = _peRates.corporate_tax_rate ?? '';
+}
+
+async function savePlannedRates(){
+  const body = {
+    cnss_employer_rate: parseFloat(document.getElementById('pe-rate-cnss').value),
+    cnss_employee_rate: parseFloat(document.getElementById('pe-rate-cnss-emp').value),
+    corporate_tax_rate: parseFloat(document.getElementById('pe-rate-tax').value),
+  };
+  const d = await post('/api/finance/rates', body);
+  if(d.error){toast(d.error,'error');return;}
+  _peRates = d.rates || _peRates;
+  toast('Taux mis a jour — le P&L sera recalcule','success');
+}
+
+async function loadPlannedList(){
+  const year   = document.getElementById('pe-year').value || new Date().getFullYear();
+  const status = document.getElementById('pe-filter-status').value || '';
+  const params = new URLSearchParams({year}); if(status) params.set('status', status);
+  const d = await api('/api/finance/planned?'+params);
+  _peData = d.expenses || [];
+  document.getElementById('pe-count').textContent = `${_peData.length} entree${_peData.length!==1?'s':''}`;
+
+  // Compute KPIs
+  const yearInt = parseInt(year);
+  let recurringPerMonth = 0, oneTimeAhead = 0, totalYear = 0;
+  const today = new Date();
+  for(const pe of _peData){
+    if(pe.status!=='planned') continue;
+    if(pe.is_recurring){
+      // recurring contribution to monthly run-rate
+      const m = pe.frequency==='monthly'?1:(pe.frequency==='quarterly'?3:12);
+      recurringPerMonth += (pe.amount_tnd||0) / m;
+      // year total: count occurrences in the year
+      const start = pe.start_date?new Date(pe.start_date):null;
+      const end   = pe.end_date?new Date(pe.end_date):new Date(yearInt,11,31);
+      if(start){
+        let cur = new Date(Math.max(start, new Date(yearInt,0,1)));
+        const stop = new Date(Math.min(end, new Date(yearInt,11,31)));
+        while(cur<=stop){
+          totalYear += pe.amount_tnd||0;
+          cur.setMonth(cur.getMonth() + (pe.frequency==='monthly'?1:(pe.frequency==='quarterly'?3:12)));
+        }
+      }
+    }else{
+      if(pe.due_date){
+        const d = new Date(pe.due_date);
+        if(d.getFullYear()===yearInt){
+          totalYear += pe.amount_tnd||0;
+          if(d>=today) oneTimeAhead += pe.amount_tnd||0;
+        }
+      }
+    }
+  }
+  document.getElementById('pe-kpi-total').textContent     = _peFmt(totalYear);
+  document.getElementById('pe-kpi-recurring').textContent = _peFmt(recurringPerMonth);
+  document.getElementById('pe-kpi-onetime').textContent   = _peFmt(oneTimeAhead);
+  document.getElementById('pe-kpi-count').textContent     = _peData.filter(p=>p.status==='planned').length;
+
+  renderGantt(yearInt);
+}
+
+function renderGantt(year){
+  const el = document.getElementById('pe-gantt');
+  if(!_peData.length){el.innerHTML='<div style="color:var(--muted);padding:30px;text-align:center;">Aucune depense prevue. Cliquez sur "Nouvelle depense prevue" pour commencer.</div>';return;}
+
+  // Header row
+  let html = `<div class="gantt-row gantt-header"><div></div>`+_peMonths.map(m=>`<div class="gantt-cell">${m}</div>`).join('')+`</div>`;
+
+  // One row per planned expense
+  _peData.forEach(pe=>{
+    const cells = Array(12).fill(null);
+    const color = _peColor(pe.category);
+    if(pe.is_recurring){
+      const start = pe.start_date?new Date(pe.start_date):null;
+      const end   = pe.end_date?new Date(pe.end_date):new Date(year,11,31);
+      if(start){
+        const step = pe.frequency==='monthly'?1:(pe.frequency==='quarterly'?3:12);
+        let cur = new Date(Math.max(start, new Date(year,0,1)));
+        const stop = new Date(Math.min(end, new Date(year,11,31)));
+        // Align cur to a valid recurrence date >= year start
+        if(cur<start){cur = new Date(start);}
+        // step forward until we're in the year
+        while(cur < new Date(year,0,1)){
+          cur.setMonth(cur.getMonth()+step);
+        }
+        while(cur<=stop){
+          if(cur.getFullYear()===year){
+            cells[cur.getMonth()] = {amount: pe.amount_tnd, occurrence: cur.toISOString().slice(0,10)};
+          }
+          cur.setMonth(cur.getMonth()+step);
+        }
+      }
+    }else{
+      if(pe.due_date){
+        const d = new Date(pe.due_date);
+        if(d.getFullYear()===year) cells[d.getMonth()] = {amount: pe.amount_tnd, occurrence: pe.due_date};
+      }
+    }
+
+    // Status class
+    const statusCls = pe.status==='paid'?'status-paid':(pe.status==='cancelled'?'status-cancelled':'');
+
+    const labelIcon = pe.is_recurring?'⟲':'•';
+    const labelType = pe.is_recurring?({monthly:'M',quarterly:'T',yearly:'A'})[pe.frequency]||'':'';
+    const labelHtml = `<div class="gantt-label" onclick='editPlanned(${JSON.stringify(pe).replace(/'/g,"&apos;")})' style="cursor:pointer;">
+      <span style="color:${color};font-weight:900;">${labelIcon}</span>
+      <div style="flex:1;overflow:hidden;text-overflow:ellipsis;">
+        <div style="font-weight:700;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(pe.name)}</div>
+        <div style="font-size:9px;color:var(--muted);">${escHtml(pe.category)}${labelType?' · '+labelType:''}</div>
+      </div>
+    </div>`;
+
+    const cellsHtml = cells.map(c=>{
+      if(!c) return `<div class="gantt-cell"></div>`;
+      return `<div class="gantt-cell"><div class="gantt-occ ${statusCls}" style="background:${color};" title="${escHtml(pe.name)} — ${_peFmt(c.amount)} le ${c.occurrence}" onclick='editPlanned(${JSON.stringify(pe).replace(/'/g,"&apos;")})'>${_peFmt(c.amount)}</div></div>`;
+    }).join('');
+
+    html += `<div class="gantt-row">${labelHtml}${cellsHtml}</div>`;
+  });
+
+  el.innerHTML = html;
+
+  // Legend
+  const cats = Array.from(new Set(_peData.map(p=>p.category)));
+  const legend = cats.map(c=>`<span><i style="background:${_peColor(c)};display:inline-block;width:10px;height:10px;border-radius:2px;"></i> ${escHtml(c)}</span>`).join('');
+  document.getElementById('pe-legend').innerHTML = legend;
+}
+
+async function loadPlannedVariance(){
+  const year = document.getElementById('pe-year').value || new Date().getFullYear();
+  const d = await api('/api/finance/statements/variance?year='+year);
+  const el = document.getElementById('pe-variance');
+  if(!d.months || !d.months.some(m=>m.total_planned>0 || m.total_actual>0)){
+    el.innerHTML='<div style="color:var(--muted);padding:20px;text-align:center;font-size:11px;">Pas encore de donnees a comparer.</div>';
+    return;
+  }
+  // Build a compact "per month" table for now (simpler than full per-cat-per-month)
+  let html = `<table class="var-table"><thead><tr>
+    <th>Mois</th><th>Prevu (TND)</th><th>Reel (TND)</th><th>Ecart</th><th>%</th>
+  </tr></thead><tbody>`;
+  d.months.forEach(m=>{
+    const delta = m.delta;
+    const pct = m.total_planned>0 ? (100*delta/m.total_planned).toFixed(1)+'%' : '—';
+    const cls = delta>0?'var-delta-pos':(delta<0?'var-delta-neg':'');
+    html += `<tr><td class="cat">${_peMonths[m.month-1]}</td>
+      <td style="text-align:right;">${_peFmt(m.total_planned)}</td>
+      <td style="text-align:right;">${_peFmt(m.total_actual)}</td>
+      <td style="text-align:right;" class="${cls}">${delta>=0?'+':''}${_peFmt(delta)}</td>
+      <td style="text-align:right;" class="${cls}">${pct}</td></tr>`;
+  });
+  const tot = d.year_total || {};
+  const totDelta = tot.delta||0;
+  const totCls = totDelta>0?'var-delta-pos':(totDelta<0?'var-delta-neg':'');
+  html += `<tr class="row-total"><td class="cat">Total ${d.year}</td>
+    <td style="text-align:right;">${_peFmt(tot.planned)}</td>
+    <td style="text-align:right;">${_peFmt(tot.actual)}</td>
+    <td style="text-align:right;" class="${totCls}">${totDelta>=0?'+':''}${_peFmt(totDelta)}</td>
+    <td>—</td></tr>`;
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+function peOnTypeChange(){
+  const isRec = document.querySelector('input[name="pe-type"]:checked').value === 'recurring';
+  document.getElementById('pe-once-row').style.display  = isRec ? 'none' : 'block';
+  document.getElementById('pe-freq-row').style.display  = isRec ? 'block' : 'none';
+  document.getElementById('pe-start-row').style.display = isRec ? 'block' : 'none';
+  document.getElementById('pe-end-row').style.display   = isRec ? 'block' : 'none';
+  // Update toggle visuals
+  document.getElementById('pe-toggle-once').style.background  = !isRec ? 'var(--pink-soft,#fce7f3)' : 'transparent';
+  document.getElementById('pe-toggle-recur').style.background = isRec  ? 'var(--pink-soft,#fce7f3)' : 'transparent';
+}
+
+async function openPlannedModal(){
+  // Reset
+  ['pe-id','pe-name','pe-amount','pe-fx','pe-amount-tnd','pe-due','pe-start','pe-end','pe-notes'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  // Default to one-time
+  document.querySelector('input[name="pe-type"][value="once"]').checked = true;
+  peOnTypeChange();
+  document.getElementById('pe-currency').value='TND';
+  document.getElementById('pe-status').value='planned';
+  document.getElementById('pe-frequency').value='monthly';
+  // Populate dropdowns
+  await invCatPopulate('pe-category');  // reuses the invoice category list
+  // Ensure first option is the default
+  const catSel = document.getElementById('pe-category');
+  if(catSel && catSel.options[0] && !catSel.options[0].value) catSel.options[0].selected = true;
+  await _populateDeptsIntoSelect('pe-dept','-- Aucun --');
+  document.getElementById('pe-modal-title').textContent='Nouvelle depense prevue';
+  document.getElementById('pe-modal').classList.add('show');
+}
+
+async function editPlanned(pe){
+  await invCatPopulate('pe-category');
+  await _populateDeptsIntoSelect('pe-dept','-- Aucun --');
+  document.getElementById('pe-id').value = pe.id;
+  document.getElementById('pe-name').value = pe.name||'';
+  document.getElementById('pe-category').value = pe.category||'autre';
+  document.getElementById('pe-dept').value = pe.department_id||'';
+  document.getElementById('pe-amount').value = pe.amount??'';
+  document.getElementById('pe-currency').value = pe.currency||'TND';
+  document.getElementById('pe-fx').value = pe.fx_rate??'';
+  document.getElementById('pe-amount-tnd').value = pe.amount_tnd??'';
+  document.getElementById('pe-status').value = pe.status||'planned';
+  document.getElementById('pe-notes').value = pe.notes||'';
+  if(pe.is_recurring){
+    document.querySelector('input[name="pe-type"][value="recurring"]').checked = true;
+    document.getElementById('pe-frequency').value = pe.frequency||'monthly';
+    document.getElementById('pe-start').value = pe.start_date||'';
+    document.getElementById('pe-end').value   = pe.end_date||'';
+  }else{
+    document.querySelector('input[name="pe-type"][value="once"]').checked = true;
+    document.getElementById('pe-due').value = pe.due_date||'';
+  }
+  peOnTypeChange();
+  document.getElementById('pe-modal-title').textContent='Modifier depense prevue';
+  document.getElementById('pe-modal').classList.add('show');
+}
+
+function peRecomputeTnd(){
+  const amt = parseFloat(document.getElementById('pe-amount').value)||0;
+  const cur = document.getElementById('pe-currency').value;
+  const fxOverride = parseFloat(document.getElementById('pe-fx').value);
+  let rate;
+  if(cur==='TND'){rate=1;}
+  else if(fxOverride>0){rate=fxOverride;}
+  else if(_incFxRates){rate = _incFxRates[`${cur.toLowerCase()}_to_tnd`] || 0;}
+  else{rate = 0;}
+  document.getElementById('pe-amount-tnd').value = (amt*rate).toFixed(2);
+}
+
+async function savePlanned(){
+  peRecomputeTnd();
+  const id = document.getElementById('pe-id').value;
+  const isRecurring = document.querySelector('input[name="pe-type"]:checked').value === 'recurring';
+  const body = {
+    name: document.getElementById('pe-name').value,
+    category: document.getElementById('pe-category').value || 'autre',
+    department_id: document.getElementById('pe-dept').value || null,
+    amount: parseFloat(document.getElementById('pe-amount').value)||0,
+    currency: document.getElementById('pe-currency').value,
+    fx_rate: document.getElementById('pe-fx').value || null,
+    status: document.getElementById('pe-status').value,
+    notes: document.getElementById('pe-notes').value,
+    is_recurring: isRecurring,
+  };
+  if(isRecurring){
+    body.frequency  = document.getElementById('pe-frequency').value;
+    body.start_date = document.getElementById('pe-start').value || null;
+    body.end_date   = document.getElementById('pe-end').value || null;
+  }else{
+    body.due_date   = document.getElementById('pe-due').value || null;
+  }
+  if(!body.name){toast('Nom requis','error');return;}
+  const url = id?'/api/finance/planned/update':'/api/finance/planned';
+  if(id) body.id = id;
+  const r = await _orgErr(post(url, body));
+  if(!r||r.error) return;
+  toast(id?'Mis a jour':'Cree','success');
+  closeOrgModal('pe-modal');
+  loadPlannedPage();
+}
+
+async function deletePlanned(id){
+  if(!confirm('Supprimer cette depense prevue ?'))return;
+  const r = await _orgErr(post('/api/finance/planned/delete',{id}));
+  if(r&&!r.error){toast('Supprimee','success');loadPlannedPage();}
 }
 
 async function incOnFileChosen(input){
