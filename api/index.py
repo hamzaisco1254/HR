@@ -53,6 +53,8 @@ from planned_expense_store import PlannedExpenseStore, get_finance_rates, set_fi
 import statements_engine
 import forecast_engine
 import finance_assistant
+import jd_generator
+import jd_pdf
 from rag_store import RagStore, CATEGORIES as RAG_CATEGORIES
 import outlook_agent
 from gemini_client import generate as gemini_generate, is_configured as gemini_configured
@@ -1927,6 +1929,147 @@ def api_planned_materialize():
     if result is None:
         return jsonify({'error': 'Depense prevue introuvable'}), 404
     return jsonify({'status': 'ok', 'expense': result})
+
+
+# ═══════════════════════════════════════════════════════════════════
+# JOB DESCRIPTION GENERATOR (PR-10)
+# Reference JDs live in rag_documents under category='job_description'.
+# Generated drafts live in generated_jds. PDF rendered via reportlab.
+# ═══════════════════════════════════════════════════════════════════
+
+@app.route('/api/jd/library', methods=['GET'])
+@login_required
+def api_jd_library_list():
+    """Return JDs uploaded as style references."""
+    docs = [d for d in rag_store.list_documents() if d.get('category') == 'job_description']
+    return jsonify({'documents': docs})
+
+
+@app.route('/api/jd/library/upload', methods=['POST'])
+@login_required
+@admin_required
+@rate_limit(tag='jd_lib_upload', max_requests=20, window_seconds=3600, by='user')
+@audit(action='jd.library.upload', entity='rag_document')
+def api_jd_library_upload():
+    """Upload a past JD as a style reference. Same backend as chatbot upload."""
+    f = request.files.get('file')
+    if not f or not f.filename:
+        return jsonify({'error': 'Aucun fichier fourni'}), 400
+    safe_name = secure_filename(f.filename) or 'fiche'
+    allowed = ('.pdf', '.docx', '.txt', '.md')
+    if not safe_name.lower().endswith(allowed):
+        return jsonify({'error': f"Format non supporte ({', '.join(allowed)})"}), 400
+    try:
+        blob = f.read()
+        if len(blob) > 25 * 1024 * 1024:
+            return jsonify({'error': 'Fichier trop volumineux (max 25 Mo)'}), 400
+        result = rag_store.add_document(safe_name, blob, category='job_description')
+        return jsonify({'status': 'ok', **result})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception:
+        logger.exception('jd_library_upload_failed')
+        return jsonify({'error': "Echec de l'indexation."}), 500
+
+
+@app.route('/api/jd/library/delete', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='jd.library.delete', entity='rag_document', entity_arg='id')
+def api_jd_library_delete():
+    data = request.get_json(force=True) or {}
+    doc_id = (data.get('id') or '').strip()
+    if doc_id.startswith('builtin_'):
+        return jsonify({'error': 'Reference integree, non supprimable.'}), 400
+    if rag_store.delete_document(doc_id):
+        return jsonify({'status': 'ok'})
+    return jsonify({'error': 'Document non trouve'}), 404
+
+
+@app.route('/api/jd/generate', methods=['POST'])
+@login_required
+@rate_limit(tag='jd_generate', max_requests=15, window_seconds=600, by='user')
+@audit(action='jd.generate', entity='jd_draft')
+def api_jd_generate():
+    """Generate a new JD from inputs + uploaded references."""
+    spec = request.get_json(force=True) or {}
+    try:
+        result = jd_generator.generate_jd(rag_store, spec)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.exception('jd_generate_failed')
+        return jsonify({'error': f"Erreur de generation : {e}"}), 502
+    return jsonify({'status': 'ok', **result})
+
+
+@app.route('/api/jd/list', methods=['GET'])
+@login_required
+def api_jd_list():
+    return jsonify({'drafts': jd_generator.list_drafts()})
+
+
+@app.route('/api/jd/<jd_id>', methods=['GET'])
+@login_required
+def api_jd_get(jd_id: str):
+    d = jd_generator.get_draft(jd_id)
+    if not d:
+        return jsonify({'error': 'Fiche introuvable'}), 404
+    return jsonify({'draft': d})
+
+
+@app.route('/api/jd/save', methods=['POST'])
+@login_required
+@audit(action='jd.save', entity='jd_draft', entity_arg='id')
+def api_jd_save():
+    """Create or update a draft. Pass id to update; omit to create."""
+    data = request.get_json(force=True) or {}
+    jd_id = (data.get('id') or '').strip() or None
+    try:
+        result = jd_generator.save_draft(data, jd_id=jd_id, created_by=_current_user_id())
+    except Exception as e:
+        logger.exception('jd_save_failed')
+        return jsonify({'error': str(e)}), 400
+    if result is None:
+        return jsonify({'error': 'Fiche introuvable'}), 404
+    return jsonify({'status': 'ok', 'draft': result})
+
+
+@app.route('/api/jd/delete', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='jd.delete', entity='jd_draft', entity_arg='id')
+def api_jd_delete():
+    data = request.get_json(force=True) or {}
+    if not jd_generator.delete_draft((data.get('id') or '').strip()):
+        return jsonify({'error': 'Fiche introuvable'}), 404
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/jd/<jd_id>/pdf', methods=['GET'])
+@login_required
+def api_jd_pdf(jd_id: str):
+    d = jd_generator.get_draft(jd_id)
+    if not d:
+        return jsonify({'error': 'Fiche introuvable'}), 404
+    try:
+        pdf_bytes = jd_pdf.render_jd_pdf(d)
+    except Exception as e:
+        logger.exception('jd_pdf_failed')
+        return jsonify({'error': f"Erreur generation PDF : {e}"}), 500
+    fname = jd_pdf.safe_filename(d.get('title') or 'fiche-de-poste')
+    audit_store.record(
+        action='jd.pdf.download', actor_id=session.get('user_id', ''),
+        actor_email=session.get('user_email', ''),
+        entity_type='jd_draft', entity_id=jd_id,
+        ip=request.headers.get('X-Forwarded-For', request.remote_addr) or '', ok=True,
+    )
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=fname,
+    )
 
 
 # ─── Finance rates (CNSS + corporate tax) ───────────────────────────

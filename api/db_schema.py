@@ -412,6 +412,26 @@ CREATE TABLE IF NOT EXISTS project_assignments (
 CREATE INDEX IF NOT EXISTS proj_assign_project_idx  ON project_assignments (project_id);
 CREATE INDEX IF NOT EXISTS proj_assign_employee_idx ON project_assignments (employee_id);
 CREATE INDEX IF NOT EXISTS proj_assign_period_idx   ON project_assignments (employee_id, start_date, end_date);
+
+-- ── Generated job descriptions (drafts) ─────────────────────────
+-- AI-generated JDs the user can edit + re-download. Reference JDs
+-- (the user's past job postings) are stored in rag_documents/chunks
+-- under category='job_description' and used as few-shot examples.
+CREATE TABLE IF NOT EXISTS generated_jds (
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    department_id   TEXT REFERENCES departments(id) ON DELETE SET NULL,
+    seniority       TEXT,                              -- "junior" | "mid" | "senior" | "lead" | "manager"
+    location        TEXT,
+    contract_type   TEXT,                              -- "CDI" | "CDD" | "Stage" | "Freelance"
+    content         JSONB NOT NULL DEFAULT '{}'::jsonb, -- structured sections
+    source_doc_ids  TEXT[],                            -- which library docs were used as ref
+    created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS gen_jds_dept_idx ON generated_jds (department_id);
+CREATE INDEX IF NOT EXISTS gen_jds_created_idx ON generated_jds (created_at DESC);
 """
 
 

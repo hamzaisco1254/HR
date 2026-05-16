@@ -857,6 +857,9 @@ select{cursor:pointer;appearance:none;
   <a href="#" class="{% if active_tab=='historique' %}active{% endif %}" onclick="showPage('historique',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     Historique</a>
+  <a href="#" onclick="showPage('jd',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+    Fiches de poste <span style="background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;font-size:8px;padding:2px 6px;border-radius:10px;margin-left:auto;font-weight:800;letter-spacing:.5px;">IA</span></a>
   <div class="sep"></div>
   <div class="sec">Voyages & Visa</div>
   <a href="#" class="{% if active_tab=='trips' %}active{% endif %}" onclick="showPage('trips',this)">
@@ -1048,6 +1051,128 @@ select{cursor:pointer;appearance:none;
     </div>
   </div>
 </div>
+
+<!-- ═══════════ JOB DESCRIPTION GENERATOR ═══════════ -->
+<style>
+.jd-tabs{display:flex;gap:4px;border-bottom:2px solid var(--border-l);margin-bottom:18px;}
+.jd-tab{padding:10px 18px;cursor:pointer;font-size:12px;font-weight:700;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;}
+.jd-tab.active{color:var(--pink);border-bottom-color:var(--pink);}
+.jd-tab:hover:not(.active){color:var(--text);}
+.jd-tab-panel{display:none;}
+.jd-tab-panel.active{display:block;}
+.jd-section{background:white;border:1px solid var(--border-l);border-radius:var(--radius);padding:16px 18px;margin-bottom:12px;}
+.jd-section h4{margin:0 0 8px;font-size:11px;font-weight:800;color:var(--pink);text-transform:uppercase;letter-spacing:1px;}
+.jd-section textarea{width:100%;min-height:60px;border:1px solid var(--border-l);border-radius:var(--radius-xs);padding:8px 10px;font-family:inherit;font-size:13px;resize:vertical;color:var(--text);background:#fafafa;line-height:1.5;}
+.jd-section textarea:focus{outline:2px solid var(--pink);outline-offset:-1px;background:white;}
+.jd-list-item{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;}
+.jd-list-item .bullet{color:var(--purple);font-weight:900;margin-top:8px;flex-shrink:0;width:14px;text-align:center;}
+.jd-list-item input{flex:1;border:1px solid var(--border-l);border-radius:var(--radius-xs);padding:8px 10px;font-family:inherit;font-size:13px;background:#fafafa;}
+.jd-list-item input:focus{outline:2px solid var(--pink);outline-offset:-1px;background:white;}
+.jd-list-item .rm-btn{background:transparent;border:none;color:var(--muted);cursor:pointer;padding:6px 8px;border-radius:6px;}
+.jd-list-item .rm-btn:hover{background:var(--red-soft,#fee2e2);color:var(--red,#dc2626);}
+.jd-add-btn{background:transparent;border:1px dashed var(--border);color:var(--muted);padding:8px 14px;border-radius:var(--radius-xs);font-size:11px;cursor:pointer;margin-top:4px;}
+.jd-add-btn:hover{border-color:var(--pink);color:var(--pink);}
+.jd-sources-chip{display:inline-block;background:var(--purple-soft,#ede9fe);color:var(--purple);padding:3px 8px;border-radius:8px;font-size:10px;font-weight:700;margin:0 4px 4px 0;}
+.jd-empty{text-align:center;padding:50px 20px;color:var(--muted);}
+.jd-empty svg{margin-bottom:14px;opacity:0.3;}
+.jd-empty h3{font-size:14px;margin-bottom:6px;color:var(--text);}
+</style>
+
+<div class="page" id="pg-jd">
+  <div class="page-header">
+    <h2>Generateur de fiches de poste
+      <span style="background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;font-size:9px;padding:2px 7px;border-radius:10px;font-weight:800;letter-spacing:.5px;margin-left:6px;vertical-align:middle;">IA</span>
+    </h2>
+    <p>Generez des fiches de poste qui suivent le style maison, editez-les et exportez-les en PDF.</p>
+  </div>
+
+  <div class="jd-tabs">
+    <div class="jd-tab active" data-jd-tab="generate"  onclick="jdSwitchTab('generate')">Generer une fiche</div>
+    <div class="jd-tab"        data-jd-tab="drafts"    onclick="jdSwitchTab('drafts')">Mes fiches enregistrees</div>
+    <div class="jd-tab"        data-jd-tab="library"   onclick="jdSwitchTab('library')">Bibliotheque (references)</div>
+  </div>
+
+  <!-- ═══ TAB: GENERATE ═══ -->
+  <div class="jd-tab-panel active" id="jd-tab-generate">
+    <div id="jd-gen-form-card" class="card">
+      <h3>Parametres de la nouvelle fiche</h3>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px;">L'IA s'inspire des fiches de votre <a href="#" onclick="jdSwitchTab('library');return false;" style="color:var(--pink);">bibliotheque</a> pour suivre votre style maison.</p>
+      <div class="grid2" style="margin-top:14px;">
+        <div style="grid-column:1/-1;"><label>Intitule du poste *</label><input class="input" id="jd-position-title" placeholder="Ex: Developpeur Backend Senior"></div>
+        <div><label>Departement</label><select class="form-select" id="jd-department"><option value="">-- Aucun --</option></select></div>
+        <div><label>Seniorite</label><select class="form-select" id="jd-seniority">
+          <option value="">-- Non specifie --</option>
+          <option value="junior">Junior</option>
+          <option value="mid">Confirme (Mid)</option>
+          <option value="senior">Senior</option>
+          <option value="lead">Lead / Tech Lead</option>
+          <option value="manager">Manager</option>
+          <option value="director">Directeur / Director</option>
+        </select></div>
+        <div><label>Type de contrat</label><select class="form-select" id="jd-contract">
+          <option value="CDI">CDI</option>
+          <option value="CDD">CDD</option>
+          <option value="Stage">Stage</option>
+          <option value="Freelance">Freelance</option>
+          <option value="Alternance">Alternance</option>
+        </select></div>
+        <div><label>Localisation</label><input class="input" id="jd-location" placeholder="Tunis, Tunisie"></div>
+        <div style="grid-column:1/-1;"><label>Competences/responsabilites obligatoires (une par ligne)</label><textarea class="input" id="jd-must-have" rows="4" placeholder="Une exigence par ligne, ex:&#10;- Maitrise de Python&#10;- 3+ ans en architecture cloud"></textarea></div>
+        <div style="grid-column:1/-1;"><label>Bonus / souhaite (une par ligne)</label><textarea class="input" id="jd-nice-to-have" rows="3" placeholder="Optionnel"></textarea></div>
+        <div style="grid-column:1/-1;"><label>Contexte supplementaire</label><textarea class="input" id="jd-extra-context" rows="2" placeholder="Toute info utile : equipe cible, projet, environnement technique..."></textarea></div>
+      </div>
+      <div style="margin-top:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <button class="btn btn-pink" onclick="jdGenerate()" id="jd-gen-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Generer avec l'IA
+        </button>
+        <span id="jd-gen-status" style="font-size:11px;color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <!-- Editor card (hidden until first generation or load) -->
+    <div id="jd-editor-card" class="card" style="display:none;margin-top:18px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;flex:1;">Fiche generee — editable</h3>
+        <button class="btn btn-outline btn-sm" onclick="jdResetEditor()">Nouvelle</button>
+        <button class="btn btn-outline btn-sm" onclick="jdSave()">Sauvegarder</button>
+        <button class="btn btn-pink btn-sm" onclick="jdDownloadPdf()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Telecharger PDF
+        </button>
+      </div>
+      <div id="jd-sources-row" style="margin-top:10px;font-size:11px;color:var(--muted);display:none;">
+        <strong>Inspire de :</strong> <span id="jd-sources-list"></span>
+      </div>
+      <div id="jd-editor" style="margin-top:18px;"></div>
+    </div>
+  </div>
+
+  <!-- ═══ TAB: DRAFTS ═══ -->
+  <div class="jd-tab-panel" id="jd-tab-drafts">
+    <div id="jd-drafts-list"></div>
+  </div>
+
+  <!-- ═══ TAB: LIBRARY ═══ -->
+  <div class="jd-tab-panel" id="jd-tab-library">
+    <div class="card">
+      <h3>Bibliotheque de fiches de poste de reference</h3>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px;">Uploadez d'anciennes fiches de poste de l'entreprise. L'IA s'en inspire pour le ton, la structure et le vocabulaire.</p>
+      <div id="jd-lib-admin-zone" style="margin-top:14px;display:none;">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px dashed var(--border);padding:14px;border-radius:var(--radius-xs);background:var(--bg);">
+          <input type="file" id="jd-lib-file" accept=".pdf,.docx,.txt,.md" style="display:none" onchange="jdLibraryUpload()">
+          <button class="btn btn-pink btn-sm" onclick="document.getElementById('jd-lib-file').click()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Uploader une fiche de reference
+          </button>
+          <span id="jd-lib-status" style="font-size:11px;color:var(--muted);"></span>
+        </div>
+      </div>
+      <div id="jd-lib-list" style="margin-top:14px;"></div>
+    </div>
+  </div>
+</div>
+
 
 <!-- ═══════ TRIPS & VISA MANAGEMENT ═══════ -->
 <!-- ═══════ TRAVEL MODULE (dossier-centric) ═══════ -->
@@ -2278,6 +2403,7 @@ function showPage(id,el){
   if(id==='income')loadIncomePage();
   if(id==='statements')loadStatementsPage();
   if(id==='planned')loadPlannedPage();
+  if(id==='jd')loadJdPage();
 }
 const api=(u,o)=>fetch(u,o).then(r=>r.json());
 const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
@@ -4034,6 +4160,362 @@ function _stRenderExpByCategory(eb){
   const total = eb.grand_total || 1;
   document.getElementById('st-exp-cat-table').innerHTML =
     `<table class="tbl" style="margin:0;"><thead><tr><th>Categorie</th><th style="text-align:right;">Montant</th><th style="text-align:right;">%</th></tr></thead><tbody>${data.map(r=>`<tr><td>${escHtml(labelOf(r.category))}</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_stFmt(r.amount_tnd)}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${Math.round(100*r.amount_tnd/total)}%</td></tr>`).join('')}</tbody></table><div style="margin-top:8px;font-size:11px;color:var(--muted);text-align:right;">Total : <strong>${_stFmt(total)}</strong></div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   JOB DESCRIPTION GENERATOR
+   ══════════════════════════════════════════════════════════════ */
+
+// Canonical section structure (mirrors api/jd_generator.JD_SECTIONS)
+const JD_SECTIONS = [
+  {key:'title',            label:'Titre du poste',          type:'text'},
+  {key:'summary',          label:'Resume du poste',         type:'paragraph'},
+  {key:'mission',          label:'Mission principale',      type:'paragraph'},
+  {key:'responsibilities', label:'Responsabilites cles',    type:'list'},
+  {key:'requirements',     label:'Profil recherche',        type:'list'},
+  {key:'skills_required',  label:'Competences requises',    type:'list'},
+  {key:'skills_preferred', label:'Competences appreciees',  type:'list'},
+  {key:'benefits',         label:'Conditions et avantages', type:'list'},
+  {key:'process',          label:'Processus de recrutement',type:'paragraph'},
+];
+
+let _jdCurrentDraftId = null;   // null = unsaved
+let _jdCurrentContent = null;   // {section_key: value}
+let _jdCurrentMeta    = {};     // {department_id, seniority, contract_type, location}
+let _jdCurrentSources = [];
+let _jdIsAdmin        = false;
+
+async function loadJdPage(){
+  // Resolve admin status BEFORE rendering library (which gates the delete button)
+  try{
+    const me = await api('/api/auth/me');
+    _jdIsAdmin = (me.user && me.user.role === 'admin');
+    document.getElementById('jd-lib-admin-zone').style.display = _jdIsAdmin ? 'block' : 'none';
+  }catch(e){ _jdIsAdmin = false; }
+  await Promise.all([loadJdLibrary(), loadJdDrafts()]);
+  await _populateDeptsIntoSelect('jd-department','-- Aucun --');
+}
+
+function jdSwitchTab(name){
+  document.querySelectorAll('.jd-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.jd-tab-panel').forEach(t=>t.classList.remove('active'));
+  document.querySelector(`.jd-tab[data-jd-tab="${name}"]`)?.classList.add('active');
+  document.getElementById('jd-tab-'+name)?.classList.add('active');
+  if(name === 'drafts')  loadJdDrafts();
+  if(name === 'library') loadJdLibrary();
+}
+
+/* ── LIBRARY ─────────────────────────────────────────────── */
+async function loadJdLibrary(){
+  try{
+    const d = await api('/api/jd/library');
+    const list = d.documents || [];
+    const el = document.getElementById('jd-lib-list');
+    if(!list.length){
+      el.innerHTML = `<div class="jd-empty">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <h3>Aucune fiche de reference</h3>
+        <p style="font-size:11px;">Uploadez d'anciennes fiches pour que l'IA en apprenne le style.</p>
+      </div>`;
+      return;
+    }
+    el.innerHTML = list.map(doc=>{
+      const sizeKb = Math.round((doc.size||0)/1024);
+      return `<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg);border-radius:var(--radius-xs);margin-bottom:8px;">
+        <div style="width:36px;height:36px;border-radius:8px;background:var(--purple-soft,#ede9fe);color:var(--purple);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:12px;word-break:break-word;">${escHtml(doc.filename)}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;">${doc.chunks} chunks · ${sizeKb} Ko</div>
+        </div>
+        ${(!doc.is_builtin && _jdIsAdmin) ? `<button class="btn btn-danger btn-sm" onclick="jdLibraryDelete('${doc.id}')" style="padding:4px 10px;">×</button>` : ''}
+      </div>`;
+    }).join('');
+  }catch(e){}
+}
+
+async function jdLibraryUpload(){
+  const fileInput = document.getElementById('jd-lib-file');
+  const f = fileInput.files && fileInput.files[0];
+  if(!f) return;
+  if(f.size > 25*1024*1024){toast('Fichier trop volumineux (max 25 Mo)','error');return;}
+  const statusEl = document.getElementById('jd-lib-status');
+  statusEl.textContent = 'Analyse et indexation...';
+  const fd = new FormData(); fd.append('file', f);
+  try{
+    const r = await fetch('/api/jd/library/upload',{method:'POST',body:fd});
+    const d = await r.json();
+    fileInput.value = '';
+    statusEl.textContent = '';
+    if(d.error){toast(d.error,'error',6000);return;}
+    toast(`Fiche indexee (${d.chunks} passages)`,'success');
+    loadJdLibrary();
+  }catch(e){
+    statusEl.textContent = '';
+    toast('Erreur upload: '+e,'error');
+  }
+}
+
+async function jdLibraryDelete(id){
+  if(!confirm('Supprimer cette fiche de la bibliotheque ?')) return;
+  const d = await post('/api/jd/library/delete',{id});
+  if(d.error){toast(d.error,'error');return;}
+  toast('Supprimee','success');
+  loadJdLibrary();
+}
+
+/* ── DRAFTS LIST ─────────────────────────────────────────── */
+async function loadJdDrafts(){
+  try{
+    const d = await api('/api/jd/list');
+    const list = d.drafts || [];
+    const el = document.getElementById('jd-drafts-list');
+    if(!list.length){
+      el.innerHTML = `<div class="jd-empty">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
+        <h3>Aucune fiche enregistree</h3>
+        <p style="font-size:11px;">Generez votre premiere fiche dans l'onglet "Generer".</p>
+      </div>`;
+      return;
+    }
+    el.innerHTML = list.map(d=>{
+      const updatedDate = d.updated_at ? new Date(d.updated_at).toLocaleDateString('fr-FR') : '';
+      const sub = [d.department_name, d.seniority, d.contract_type, d.location].filter(Boolean).join(' · ');
+      return `<div class="card" style="margin-bottom:10px;display:flex;align-items:center;gap:14px;">
+        <div style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--pink),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;flex-shrink:0;">JD</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:800;font-size:14px;">${escHtml(d.title)}</div>
+          ${sub?`<div style="font-size:11px;color:var(--muted);margin-top:2px;">${escHtml(sub)}</div>`:''}
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;">Mis a jour le ${updatedDate}</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="jdOpenDraft('${d.id}')">Editer</button>
+        <button class="btn btn-pink btn-sm" onclick="jdDownloadPdfDirect('${d.id}')">PDF</button>
+        <button class="btn btn-danger btn-sm" onclick="jdDeleteDraft('${d.id}')">×</button>
+      </div>`;
+    }).join('');
+  }catch(e){}
+}
+
+async function jdOpenDraft(id){
+  try{
+    const d = await api('/api/jd/'+id);
+    if(d.error){toast(d.error,'error');return;}
+    _jdCurrentDraftId = d.draft.id;
+    _jdCurrentContent = d.draft.content || {};
+    _jdCurrentMeta    = {
+      department_id: d.draft.department_id || '',
+      seniority:     d.draft.seniority || '',
+      contract_type: d.draft.contract_type || '',
+      location:      d.draft.location || '',
+    };
+    _jdCurrentSources = (d.draft.source_doc_ids || []).map(id=>({doc_id:id, filename:''}));
+    jdSwitchTab('generate');
+    // Populate the form metadata
+    document.getElementById('jd-position-title').value = d.draft.title || '';
+    document.getElementById('jd-department').value = _jdCurrentMeta.department_id;
+    document.getElementById('jd-seniority').value  = _jdCurrentMeta.seniority;
+    document.getElementById('jd-contract').value   = _jdCurrentMeta.contract_type || 'CDI';
+    document.getElementById('jd-location').value   = _jdCurrentMeta.location;
+    jdRenderEditor();
+    document.getElementById('jd-editor-card').style.display='block';
+    document.getElementById('jd-editor-card').scrollIntoView({behavior:'smooth'});
+  }catch(e){toast('Erreur: '+e,'error');}
+}
+
+async function jdDeleteDraft(id){
+  if(!confirm('Supprimer cette fiche ?')) return;
+  const d = await post('/api/jd/delete',{id});
+  if(d.error){toast(d.error,'error');return;}
+  toast('Supprimee','success');
+  if(_jdCurrentDraftId === id){
+    jdResetEditor();
+  }
+  loadJdDrafts();
+}
+
+function jdDownloadPdfDirect(id){
+  window.open('/api/jd/'+id+'/pdf','_blank');
+}
+
+/* ── GENERATE ────────────────────────────────────────────── */
+async function jdGenerate(){
+  const title = document.getElementById('jd-position-title').value.trim();
+  if(!title){toast('Intitule du poste requis','error');return;}
+
+  // Get department name for the prompt
+  const deptSelect = document.getElementById('jd-department');
+  const deptName = deptSelect.options[deptSelect.selectedIndex]?.text || '';
+
+  const spec = {
+    position_title:  title,
+    department_id:   deptSelect.value,
+    department_name: (deptName.startsWith('--') ? '' : deptName),
+    seniority:       document.getElementById('jd-seniority').value,
+    contract_type:   document.getElementById('jd-contract').value,
+    location:        document.getElementById('jd-location').value.trim(),
+    must_have:       document.getElementById('jd-must-have').value.trim(),
+    nice_to_have:    document.getElementById('jd-nice-to-have').value.trim(),
+    extra_context:   document.getElementById('jd-extra-context').value.trim(),
+  };
+
+  const btn = document.getElementById('jd-gen-btn');
+  const status = document.getElementById('jd-gen-status');
+  btn.disabled = true; btn.style.opacity = '0.6';
+  status.textContent = 'Generation en cours (10-30s)...';
+
+  try{
+    const d = await post('/api/jd/generate', spec);
+    btn.disabled = false; btn.style.opacity = '1';
+    if(d.error){
+      status.textContent = '';
+      toast(d.error,'error',8000);
+      return;
+    }
+    _jdCurrentDraftId = null;
+    _jdCurrentContent = d.content || {};
+    _jdCurrentMeta = {
+      department_id: spec.department_id,
+      seniority:     spec.seniority,
+      contract_type: spec.contract_type,
+      location:      spec.location,
+    };
+    _jdCurrentSources = d.sources || [];
+    jdRenderEditor();
+    document.getElementById('jd-editor-card').style.display = 'block';
+    document.getElementById('jd-editor-card').scrollIntoView({behavior:'smooth'});
+    status.textContent = '';
+    if(d.sources && d.sources.length){
+      toast(`Fiche generee — inspiree de ${d.sources.length} reference${d.sources.length!==1?'s':''}`,'success',5000);
+    }else{
+      toast('Fiche generee (aucune reference dans la bibliotheque — style generique)','info',6000);
+    }
+  }catch(e){
+    btn.disabled = false; btn.style.opacity = '1';
+    status.textContent = '';
+    toast('Erreur: '+e,'error');
+  }
+}
+
+function jdResetEditor(){
+  _jdCurrentDraftId = null;
+  _jdCurrentContent = null;
+  _jdCurrentMeta = {};
+  _jdCurrentSources = [];
+  document.getElementById('jd-editor-card').style.display='none';
+  ['jd-position-title','jd-location','jd-must-have','jd-nice-to-have','jd-extra-context'].forEach(i=>{document.getElementById(i).value='';});
+  document.getElementById('jd-seniority').value = '';
+  document.getElementById('jd-contract').value = 'CDI';
+}
+
+/* ── EDITOR ──────────────────────────────────────────────── */
+function jdRenderEditor(){
+  const c = _jdCurrentContent || {};
+  const el = document.getElementById('jd-editor');
+
+  // Sources chips
+  if(_jdCurrentSources && _jdCurrentSources.length){
+    const srcEl = document.getElementById('jd-sources-row');
+    srcEl.style.display = 'block';
+    document.getElementById('jd-sources-list').innerHTML =
+      _jdCurrentSources.map(s=>`<span class="jd-sources-chip" title="${escHtml(s.doc_id)}">${escHtml(s.filename||s.doc_id)}${s.score?` · ${Math.round(s.score*100)}%`:''}</span>`).join('');
+  }else{
+    document.getElementById('jd-sources-row').style.display = 'none';
+  }
+
+  el.innerHTML = JD_SECTIONS.map(sec=>{
+    const value = c[sec.key];
+    if(sec.type === 'list'){
+      const items = Array.isArray(value) ? value : [];
+      return `<div class="jd-section" data-jd-section="${sec.key}">
+        <h4>${escHtml(sec.label)}</h4>
+        <div class="jd-list-container" data-key="${sec.key}">
+          ${items.map((it, idx)=>jdListItemHtml(it, sec.key, idx)).join('')}
+        </div>
+        <button class="jd-add-btn" onclick="jdListAdd('${sec.key}')">+ Ajouter un element</button>
+      </div>`;
+    }
+    // text or paragraph
+    const lines = (value && sec.type==='paragraph') ? Math.max(2, Math.ceil(String(value).length/80)) : 1;
+    if(sec.type === 'text'){
+      return `<div class="jd-section" data-jd-section="${sec.key}">
+        <h4>${escHtml(sec.label)}</h4>
+        <input class="input" id="jd-fld-${sec.key}" value="${escHtml(value||'')}" style="font-size:16px;font-weight:700;">
+      </div>`;
+    }
+    return `<div class="jd-section" data-jd-section="${sec.key}">
+      <h4>${escHtml(sec.label)}</h4>
+      <textarea id="jd-fld-${sec.key}" rows="${Math.min(8, lines)}">${escHtml(value||'')}</textarea>
+    </div>`;
+  }).join('');
+}
+
+function jdListItemHtml(text, key, idx){
+  return `<div class="jd-list-item" data-list-row>
+    <span class="bullet">•</span>
+    <input type="text" value="${escHtml(text||'')}" data-list-input="${key}">
+    <button class="rm-btn" onclick="jdListRemove(this)" title="Supprimer">×</button>
+  </div>`;
+}
+
+function jdListAdd(key){
+  const container = document.querySelector(`.jd-list-container[data-key="${key}"]`);
+  if(!container) return;
+  const idx = container.querySelectorAll('[data-list-row]').length;
+  container.insertAdjacentHTML('beforeend', jdListItemHtml('', key, idx));
+  // Focus the new input
+  const inputs = container.querySelectorAll('input');
+  inputs[inputs.length-1]?.focus();
+}
+
+function jdListRemove(btn){
+  btn.closest('[data-list-row]')?.remove();
+}
+
+function jdCollectFromEditor(){
+  const out = {};
+  JD_SECTIONS.forEach(sec=>{
+    if(sec.type === 'list'){
+      const inputs = document.querySelectorAll(`[data-list-input="${sec.key}"]`);
+      out[sec.key] = Array.from(inputs).map(i=>i.value.trim()).filter(v=>v);
+    }else{
+      out[sec.key] = (document.getElementById('jd-fld-'+sec.key)?.value || '').trim();
+    }
+  });
+  return out;
+}
+
+/* ── SAVE / DOWNLOAD ─────────────────────────────────────── */
+async function jdSave(){
+  const content = jdCollectFromEditor();
+  if(!content.title){
+    toast('Titre requis','error');return;
+  }
+  const body = {
+    title: content.title,
+    content: content,
+    department_id: _jdCurrentMeta.department_id || null,
+    seniority:     _jdCurrentMeta.seniority || null,
+    contract_type: _jdCurrentMeta.contract_type || null,
+    location:      _jdCurrentMeta.location || null,
+    source_doc_ids: (_jdCurrentSources||[]).map(s=>s.doc_id).filter(Boolean),
+  };
+  if(_jdCurrentDraftId) body.id = _jdCurrentDraftId;
+  const d = await post('/api/jd/save', body);
+  if(d.error){toast(d.error,'error');return;}
+  _jdCurrentDraftId = d.draft?.id || _jdCurrentDraftId;
+  _jdCurrentContent = d.draft?.content || content;
+  toast(_jdCurrentDraftId ? 'Sauvegardee' : 'Creee','success');
+}
+
+async function jdDownloadPdf(){
+  // Ensure latest edits are saved first
+  await jdSave();
+  if(!_jdCurrentDraftId){
+    toast('Sauvegardez la fiche avant de telecharger','error');
+    return;
+  }
+  window.open('/api/jd/'+_jdCurrentDraftId+'/pdf', '_blank');
 }
 
 /* ══════════════════════════════════════════════════════════════

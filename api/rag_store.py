@@ -139,11 +139,12 @@ def extract_text_from_file(file_bytes: bytes, filename: str) -> str:
 # ─── Store ───────────────────────────────────────────────────────────
 
 CATEGORIES = {
-    'convention': 'Convention collective',
-    'law':        'Droit du travail',
-    'policy':     'Politique interne',
-    'contract':   'Contrat / Modele',
-    'other':      'Autre',
+    'convention':      'Convention collective',
+    'law':             'Droit du travail',
+    'policy':          'Politique interne',
+    'contract':        'Contrat / Modele',
+    'job_description': 'Fiche de poste',
+    'other':           'Autre',
 }
 
 
