@@ -2046,18 +2046,69 @@ select{cursor:pointer;appearance:none;
 <!-- ═══════ ADMIN (admin only) ═══════ -->
 {% if user_role == 'admin' %}
 <div class="page" id="pg-admin">
-  <div class="page-header"><h2>Utilisateurs</h2><p>Gerez les acces a la plateforme</p></div>
+  <div class="page-header"><h2>Utilisateurs</h2><p>Gerez les acces a la plateforme — les identifiants sont envoyes par email</p></div>
+
+  <!-- SMTP status banner -->
+  <div id="smtp-banner" style="display:none;margin-bottom:18px;padding:12px 16px;border-radius:var(--radius-xs);font-size:12px;">
+    <!-- populated by loadSmtpStatus() -->
+  </div>
+
   <div class="card">
     <h3><span class="card-icon pink"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span> Gestion des Utilisateurs <span style="font-size:12px;color:var(--muted);font-weight:500;margin-left:auto;" id="user-count-badge"></span></h3>
     <div id="users-list"></div>
     <div style="margin-top:22px;border-top:1px solid var(--border-l);padding-top:22px;">
-      <h4 style="font-size:13px;margin-bottom:14px;font-weight:700;color:var(--text);">Ajouter un Utilisateur</h4>
+      <h4 style="font-size:13px;margin-bottom:6px;font-weight:700;color:var(--text);">Inviter un nouvel utilisateur</h4>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:14px;">Un mot de passe temporaire est genere automatiquement et envoye par email a l'adresse fournie. L'utilisateur devra le changer a sa premiere connexion.</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
-        <div><label>Nom</label><input class="input" id="new-user-name" style="width:160px;"></div>
-        <div><label>Email</label><input type="email" class="input" id="new-user-email" style="width:210px;"></div>
-        <div><label>Mot de passe</label><input type="password" class="input" id="new-user-pass" style="width:160px;"></div>
-        <button class="btn btn-green btn-sm" onclick="addUser()">+ Ajouter</button>
+        <div><label>Nom</label><input class="input" id="new-user-name" style="width:160px;" placeholder="Optionnel"></div>
+        <div><label>Email *</label><input type="email" class="input" id="new-user-email" style="width:240px;" placeholder="exemple@domaine.com"></div>
+        <div><label>Role</label><select class="select" id="new-user-role" style="width:140px;"><option value="user">Utilisateur</option><option value="admin">Administrateur</option></select></div>
+        <button class="btn btn-pink btn-sm" onclick="addUser()">+ Inviter</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ SMTP TEST MODAL ═══════ -->
+<div class="modal-overlay" id="smtp-test-modal">
+  <div class="modal-box" style="max-width:480px;">
+    <h3 style="margin-bottom:14px;">Envoyer un email de test</h3>
+    <p style="font-size:11px;color:var(--muted);margin-bottom:14px;">Verifiez que la configuration SMTP fonctionne en envoyant un message a votre propre adresse.</p>
+    <div><label>Destinataire</label><input type="email" class="input" id="smtp-test-to" placeholder="votre@email.com"></div>
+    <div style="margin-top:18px;display:flex;gap:10px;">
+      <button class="btn btn-pink" onclick="sendSmtpTest()" style="flex:1;">Envoyer</button>
+      <button class="btn btn-outline" onclick="document.getElementById('smtp-test-modal').classList.remove('show');">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ FIRST-LOGIN / FORCE PASSWORD CHANGE MODAL ═══════ -->
+<div class="modal-overlay" id="force-pw-modal" style="z-index:300;">
+  <div class="modal-box" style="max-width:480px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--pink),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      </div>
+      <h3 style="margin:0;">Definir votre mot de passe</h3>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:18px;line-height:1.5;">
+      Vous utilisez actuellement un mot de passe temporaire. Pour des raisons de securite,
+      vous devez en choisir un nouveau avant de continuer.
+    </p>
+    <div>
+      <label>Nouveau mot de passe *</label>
+      <input type="password" class="input" id="force-pw-new" placeholder="Au moins 12 caracteres" autocomplete="new-password">
+      <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4;">
+        Au moins 12 caracteres, incluant minuscule, majuscule, chiffre et caractere special.
+      </div>
+    </div>
+    <div style="margin-top:14px;">
+      <label>Confirmer le mot de passe *</label>
+      <input type="password" class="input" id="force-pw-confirm" autocomplete="new-password" onkeydown="if(event.key==='Enter')submitForcePasswordChange()">
+    </div>
+    <div id="force-pw-error" style="display:none;margin-top:12px;background:#fee2e2;color:#991b1b;padding:8px 12px;border-radius:var(--radius-xs);font-size:11px;"></div>
+    <div style="margin-top:22px;">
+      <button class="btn btn-pink" onclick="submitForcePasswordChange()" style="width:100%;">Definir le mot de passe</button>
     </div>
   </div>
 </div>
@@ -2351,10 +2402,173 @@ function loadKPIs(){api('/api/dashboard/data').then(d=>{const g=document.getElem
 function saveRates(){post('/api/finance/exchange_rate',{eur_to_tnd:parseFloat(document.getElementById('rate-eur-tnd').value)||3.35,tnd_to_eur:parseFloat(document.getElementById('rate-tnd-eur').value)||0.2985}).then(()=>toast('Taux sauvegardes','success'));}
 
 /* ── Admin: Users ────────────────────────────────────────── */
-function loadUsers(){api('/api/auth/users').then(d=>{document.getElementById('user-count-badge').textContent=`${d.users.length} / ${d.max}`;const el=document.getElementById('users-list');el.innerHTML=d.users.map(u=>`<div class="user-row"><div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--pink),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;flex-shrink:0;">${(u.name||u.email)[0].toUpperCase()}</div><div class="user-info"><strong>${u.name}</strong><div class="email">${u.email}</div></div><span class="user-badge ${u.role}">${u.role}</span><span class="user-badge ${u.active?'active':'inactive'}">${u.active?'Actif':'Inactif'}</span>${u.role!=='admin'?`<button class="btn btn-outline btn-sm" onclick="toggleUser('${u.id}')">${u.active?'Desactiver':'Activer'}</button><button class="btn btn-danger btn-sm" onclick="removeUser('${u.id}')">Supprimer</button>`:''}</div>`).join('');}).catch(()=>{});}
-function addUser(){const n=document.getElementById('new-user-name').value.trim();const e=document.getElementById('new-user-email').value.trim();const p=document.getElementById('new-user-pass').value;if(!e||!p){toast('Email et mot de passe requis','error');return;}post('/api/auth/add_user',{name:n,email:e,password:p}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Utilisateur ajoute','success');document.getElementById('new-user-name').value='';document.getElementById('new-user-email').value='';document.getElementById('new-user-pass').value='';loadUsers();}).catch(e=>toast('Erreur: '+e,'error'));}
+async function loadUsers(){
+  await loadSmtpStatus();
+  try{
+    const d = await api('/api/auth/users');
+    document.getElementById('user-count-badge').textContent = `${d.users.length} / ${d.max}`;
+    const el = document.getElementById('users-list');
+    el.innerHTML = d.users.map(u=>{
+      const initial = (u.name||u.email||'?')[0].toUpperCase();
+      const credSentDate = u.credentials_sent_at ? new Date(u.credentials_sent_at).toLocaleDateString('fr-FR') : '';
+      const forceBadge = u.force_password_reset
+        ? `<span class="user-badge" style="background:#fef3c7;color:#92400e;font-size:9px;padding:3px 8px;border-radius:8px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;" title="L'utilisateur doit changer son mot de passe a la prochaine connexion">MDP temporaire</span>`
+        : '';
+      return `<div class="user-row">
+        <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--pink),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;flex-shrink:0;">${escHtml(initial)}</div>
+        <div class="user-info">
+          <strong>${escHtml(u.name)}</strong>
+          <div class="email">${escHtml(u.email)}</div>
+          ${credSentDate?`<div style="font-size:10px;color:var(--muted);margin-top:2px;">Identifiants envoyes le ${credSentDate}</div>`:''}
+        </div>
+        <span class="user-badge ${u.role}">${u.role}</span>
+        <span class="user-badge ${u.active?'active':'inactive'}">${u.active?'Actif':'Inactif'}</span>
+        ${forceBadge}
+        ${u.role!=='admin'?`
+          <button class="btn btn-outline btn-sm" onclick="resendCredentials('${u.id}','${escHtml(u.email)}')">Renvoyer MDP</button>
+          <button class="btn btn-outline btn-sm" onclick="toggleUser('${u.id}')">${u.active?'Desactiver':'Activer'}</button>
+          <button class="btn btn-danger btn-sm" onclick="removeUser('${u.id}')">Supprimer</button>
+        `:''}
+      </div>`;
+    }).join('');
+  }catch(e){}
+}
+
+async function loadSmtpStatus(){
+  try{
+    const d = await api('/api/auth/smtp_status');
+    const el = document.getElementById('smtp-banner');
+    if(!el) return;
+    if(d.configured){
+      el.style.display='block';
+      el.style.background='#d1fae5';
+      el.style.color='#065f46';
+      el.style.borderLeft='4px solid #10b981';
+      el.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-weight:800;">SMTP configure</span>
+        <span style="font-size:11px;opacity:0.85;">Host: ${escHtml(d.host)}:${d.port} · From: ${escHtml(d.from)}</span>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto;font-size:10px;padding:4px 10px;" onclick="openSmtpTestModal()">Envoyer un test</button>
+      </div>`;
+    }else{
+      el.style.display='block';
+      el.style.background='#fef3c7';
+      el.style.color='#92400e';
+      el.style.borderLeft='4px solid #f59e0b';
+      el.innerHTML = `<div>
+        <strong>SMTP non configure</strong> — les mots de passe ne seront pas envoyes par email; ils s'afficheront a l'admin une seule fois apres creation.
+        <div style="font-size:11px;margin-top:6px;opacity:0.9;">
+          Configurez les variables d'environnement dans Vercel : <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USERNAME</code>, <code>SMTP_PASSWORD</code>, <code>SMTP_FROM</code>, <code>APP_URL</code>.
+        </div>
+      </div>`;
+    }
+  }catch(e){}
+}
+
+function openSmtpTestModal(){
+  document.getElementById('smtp-test-to').value='';
+  document.getElementById('smtp-test-modal').classList.add('show');
+}
+
+async function sendSmtpTest(){
+  const to = document.getElementById('smtp-test-to').value.trim();
+  if(!to){toast('Adresse requise','error');return;}
+  const d = await post('/api/auth/smtp_test',{to});
+  if(d.error){
+    toast(d.error + (d.detail?' — '+d.detail:''),'error',8000);
+    return;
+  }
+  toast('Email de test envoye','success');
+  document.getElementById('smtp-test-modal').classList.remove('show');
+}
+
+async function addUser(){
+  const name = document.getElementById('new-user-name').value.trim();
+  const email = document.getElementById('new-user-email').value.trim();
+  const role = document.getElementById('new-user-role').value || 'user';
+  if(!email){toast('Email requis','error');return;}
+  const d = await post('/api/auth/add_user',{name, email, role});
+  if(d.error){toast(d.error,'error');return;}
+  document.getElementById('new-user-name').value='';
+  document.getElementById('new-user-email').value='';
+  // Surface the password if SMTP failed
+  if(d.email_sent){
+    toast(`Utilisateur cree — identifiants envoyes a ${email}`,'success',6000);
+  }else if(d.plain_password){
+    showPasswordOnce(d.plain_password, email, d.plain_password_warning || 'Email non envoye — communiquez ce mot de passe manuellement.');
+  }else{
+    toast('Utilisateur cree','success');
+  }
+  loadUsers();
+}
+
+async function resendCredentials(userId, email){
+  if(!confirm(`Reinitialiser le mot de passe de ${email} ?\nUn nouveau mot de passe temporaire sera envoye.`)) return;
+  const d = await post('/api/auth/resend_credentials',{id:userId});
+  if(d.error){toast(d.error,'error');return;}
+  if(d.email_sent){
+    toast(`Nouveau mot de passe envoye a ${email}`,'success',6000);
+  }else if(d.plain_password){
+    showPasswordOnce(d.plain_password, email, d.plain_password_warning || 'Email non envoye — communiquez ce mot de passe manuellement.');
+  }
+  loadUsers();
+}
+
+function showPasswordOnce(password, email, warning){
+  // One-time modal showing the plain password (fallback when SMTP fails)
+  const html = `
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:400;display:flex;align-items:center;justify-content:center;" id="pwd-once-overlay">
+      <div style="background:white;border-radius:var(--radius);max-width:500px;width:90%;padding:24px;">
+        <h3 style="margin:0 0 12px;color:#92400e;">⚠ Mot de passe temporaire — a communiquer manuellement</h3>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:14px;">${escHtml(warning)}</p>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Utilisateur :</div>
+        <div style="font-family:monospace;background:var(--bg);padding:8px 12px;border-radius:var(--radius-xs);margin-bottom:14px;">${escHtml(email)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Mot de passe :</div>
+        <div style="font-family:monospace;background:#fce7f3;color:#be185d;padding:12px;border-radius:var(--radius-xs);font-weight:800;font-size:14px;margin-bottom:18px;user-select:all;">${escHtml(password)}</div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-pink" style="flex:1;" onclick="navigator.clipboard.writeText('${escHtml(password).replace(/'/g,"\\\\'")}').then(()=>toast('Copie','success'))">Copier</button>
+          <button class="btn btn-outline" onclick="document.getElementById('pwd-once-overlay').remove()">Fermer</button>
+        </div>
+        <p style="font-size:10px;color:var(--muted);margin-top:14px;text-align:center;">Ce mot de passe ne sera plus affiche apres fermeture.</p>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
 function removeUser(id){if(!confirm('Supprimer cet utilisateur?'))return;post('/api/auth/remove_user',{id}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Supprime','success');loadUsers();});}
 function toggleUser(id){post('/api/auth/toggle_user',{id}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Mis a jour','success');loadUsers();});}
+
+/* ── Force-password-change flow (first login) ──────────────────── */
+async function checkForcePasswordChange(){
+  try{
+    const d = await api('/api/auth/me');
+    if(d.force_password_reset){
+      document.getElementById('force-pw-modal').classList.add('show');
+      // Block dismissal by Esc
+      document.addEventListener('keydown', _forcePwBlocker, true);
+    }
+  }catch(e){}
+}
+function _forcePwBlocker(ev){if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();}}
+
+async function submitForcePasswordChange(){
+  const errEl = document.getElementById('force-pw-error');
+  errEl.style.display='none';
+  const newPw  = document.getElementById('force-pw-new').value;
+  const confPw = document.getElementById('force-pw-confirm').value;
+  if(newPw.length < 12){
+    errEl.textContent = 'Au moins 12 caracteres requis.';errEl.style.display='block';return;
+  }
+  if(newPw !== confPw){
+    errEl.textContent = 'Les deux mots de passe ne correspondent pas.';errEl.style.display='block';return;
+  }
+  const d = await post('/api/auth/change_password',{password:newPw});
+  if(d.error){
+    errEl.textContent = d.error; errEl.style.display='block'; return;
+  }
+  document.getElementById('force-pw-modal').classList.remove('show');
+  document.removeEventListener('keydown', _forcePwBlocker, true);
+  toast('Mot de passe defini avec succes','success');
+}
 
 /* ════════════════════════════════════════════════════════ */
 /* ══════════ TRIPS & VISA — DOSSIER-CENTRIC ══════════════ */
@@ -2730,6 +2944,8 @@ function clearChat(){
   // Auto-load trips page if it is the active tab
   if(document.getElementById('pg-trips')&&document.getElementById('pg-trips').classList.contains('active')){loadTrips();}
   if(document.getElementById('pg-chat')&&document.getElementById('pg-chat').classList.contains('active')){loadChat();}
+  // Check on every page load whether the current user must change their password
+  checkForcePasswordChange();
 })();
 
 /* ══════════════════════════════════════════════════════════════

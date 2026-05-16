@@ -27,6 +27,14 @@ MAX_USERS = int(os.environ.get('MAX_USERS', '100'))
 # ── Password policy ─────────────────────────────────────────────────
 MIN_PASSWORD_LENGTH = 12
 
+# Charsets for generated passwords — exclude characters that look alike
+# (0/O/o, 1/l/I) so users typing them off an email don't trip up.
+_GEN_LOWER   = 'abcdefghijkmnpqrstuvwxyz'
+_GEN_UPPER   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+_GEN_DIGITS  = '23456789'
+_GEN_SPECIAL = '!@#$%^&*-_=+?'
+_GEN_ALL     = _GEN_LOWER + _GEN_UPPER + _GEN_DIGITS + _GEN_SPECIAL
+
 
 def validate_password(password: str) -> None:
     """Raise ValueError if the password does not meet the policy."""
@@ -49,23 +57,54 @@ def validate_password(password: str) -> None:
         )
 
 
+def generate_temp_password(length: int = 16) -> str:
+    """Return a cryptographically random password that satisfies the policy."""
+    if length < MIN_PASSWORD_LENGTH:
+        length = MIN_PASSWORD_LENGTH
+    # Guarantee at least one of each required class
+    while True:
+        chars = [
+            _secrets.choice(_GEN_LOWER),
+            _secrets.choice(_GEN_UPPER),
+            _secrets.choice(_GEN_DIGITS),
+            _secrets.choice(_GEN_SPECIAL),
+        ]
+        chars += [_secrets.choice(_GEN_ALL) for _ in range(length - 4)]
+        _secrets.SystemRandom().shuffle(chars)
+        candidate = ''.join(chars)
+        try:
+            validate_password(candidate)
+        except ValueError:
+            continue
+        return candidate
+
+
 # ═══════════════════════════════════════════════════════════════════
 # User Store (Postgres)
 # ═══════════════════════════════════════════════════════════════════
 
-_USER_FIELDS = 'id, email, name, role, active, created_at, last_login_at'
+_USER_FIELDS = ('id, email, name, role, active, created_at, last_login_at, '
+                'force_password_reset, last_password_change_at, credentials_sent_at')
 
 def _row_to_dict(row: dict) -> dict:
     """Convert a DB row to an API-friendly dict (no password_hash)."""
     if not row:
         return {}
+    def _dt(v):
+        if v is None: return ''
+        if hasattr(v, 'isoformat'): return v.isoformat()
+        return str(v)
     return {
-        'id':            row['id'],
-        'email':         row['email'],
-        'name':          row.get('name', ''),
-        'role':          row.get('role', 'user'),
-        'active':        row.get('active', True),
-        'created_at':    row.get('created_at', ''),
+        'id':                       row['id'],
+        'email':                    row['email'],
+        'name':                     row.get('name', ''),
+        'role':                     row.get('role', 'user'),
+        'active':                   row.get('active', True),
+        'created_at':               _dt(row.get('created_at')),
+        'last_login_at':            _dt(row.get('last_login_at')),
+        'force_password_reset':     bool(row.get('force_password_reset', False)),
+        'last_password_change_at':  _dt(row.get('last_password_change_at')),
+        'credentials_sent_at':      _dt(row.get('credentials_sent_at')),
     }
 
 
@@ -102,28 +141,73 @@ class UserStore:
         row = db.one(f"SELECT {_USER_FIELDS} FROM users WHERE id = %s", (user_id,))
         return _row_to_dict(row) if row else None
 
-    def add_user(self, email: str, password: str, name: str) -> Dict:
+    def add_user(self, email: str, password: Optional[str], name: str,
+                 role: str = 'user', force_password_reset: bool = True) -> tuple:
+        """Create a user. Returns (user_dict, plain_password_used).
+
+        If `password` is empty/None, a cryptographically random temp
+        password is generated and returned in the tuple so the caller
+        can email it (or surface it in the UI if SMTP is unavailable).
+        """
         current_count = (db.one("SELECT COUNT(*) AS cnt FROM users") or {}).get('cnt', 0)
         if current_count >= MAX_USERS:
             raise ValueError(f'Maximum {MAX_USERS} utilisateurs atteint.')
 
         email_lower = email.lower().strip()
+        if not email_lower:
+            raise ValueError('Email requis.')
+        # Basic email shape check
+        if '@' not in email_lower or '.' not in email_lower.split('@')[-1]:
+            raise ValueError("Format d'email invalide.")
         exists = db.one("SELECT id FROM users WHERE LOWER(email) = %s", (email_lower,))
         if exists:
             raise ValueError('Cet email est déjà utilisé.')
-        if not email_lower or not password:
-            raise ValueError('Email et mot de passe requis.')
 
-        validate_password(password)
+        if role not in ('user', 'admin'):
+            role = 'user'
+
+        # If no password provided, generate one
+        if not password:
+            password = generate_temp_password()
+        else:
+            validate_password(password)
 
         user_id = str(uuid.uuid4())
         db.execute(
-            """INSERT INTO users (id, email, password_hash, name, role, active, created_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            """INSERT INTO users (id, email, password_hash, name, role, active,
+                                  created_at, force_password_reset)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (user_id, email_lower, generate_password_hash(password),
-             name or email_lower.split('@')[0], 'user', True, datetime.utcnow()),
+             name or email_lower.split('@')[0], role, True, datetime.utcnow(),
+             bool(force_password_reset)),
         )
-        return self.get_user_by_id(user_id) or {'id': user_id}
+        user = self.get_user_by_id(user_id) or {'id': user_id}
+        return user, password
+
+    def reset_password(self, user_id: str) -> tuple:
+        """Generate a new temp password, set force_password_reset=true.
+
+        Returns (user_dict, new_plain_password).
+        """
+        row = db.one("SELECT id FROM users WHERE id = %s", (user_id,))
+        if not row:
+            return None, None
+        new_password = generate_temp_password()
+        db.execute(
+            """UPDATE users
+                  SET password_hash = %s,
+                      force_password_reset = TRUE,
+                      last_password_change_at = NULL
+                WHERE id = %s""",
+            (generate_password_hash(new_password), user_id),
+        )
+        return self.get_user_by_id(user_id), new_password
+
+    def mark_credentials_sent(self, user_id: str) -> None:
+        db.execute(
+            "UPDATE users SET credentials_sent_at = %s WHERE id = %s",
+            (datetime.utcnow(), user_id),
+        )
 
     def remove_user(self, user_id: str) -> bool:
         row = db.one("SELECT role FROM users WHERE id = %s", (user_id,))
@@ -144,11 +228,26 @@ class UserStore:
         return self.get_user_by_id(user_id)
 
     def change_password(self, user_id: str, new_password: str) -> bool:
+        """Set a new password and clear the force-reset flag."""
         validate_password(new_password)
         return db.execute(
-            "UPDATE users SET password_hash = %s WHERE id = %s",
-            (generate_password_hash(new_password), user_id),
+            """UPDATE users
+                  SET password_hash = %s,
+                      force_password_reset = FALSE,
+                      last_password_change_at = %s
+                WHERE id = %s""",
+            (generate_password_hash(new_password), datetime.utcnow(), user_id),
         ) > 0
+
+    def must_change_password(self, user_id: str) -> bool:
+        row = db.one("SELECT force_password_reset FROM users WHERE id = %s", (user_id,))
+        return bool(row and row.get('force_password_reset'))
+
+    def verify_current_password(self, user_id: str, password: str) -> bool:
+        row = db.one("SELECT password_hash FROM users WHERE id = %s", (user_id,))
+        if not row:
+            return False
+        return check_password_hash(row['password_hash'], password)
 
     def user_count(self) -> int:
         return (db.one("SELECT COUNT(*) AS cnt FROM users") or {}).get('cnt', 0)

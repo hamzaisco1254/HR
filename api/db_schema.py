@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS users (
 );
 CREATE INDEX IF NOT EXISTS users_email_idx ON users (LOWER(email));
 
+-- Password lifecycle columns (idempotent, added for email-credential flow)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS force_password_reset    BOOLEAN     NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_password_change_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS credentials_sent_at     TIMESTAMPTZ;
+
 -- ── Audit log ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS audit_log (
     id              TEXT PRIMARY KEY,

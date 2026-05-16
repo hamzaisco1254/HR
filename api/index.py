@@ -43,6 +43,7 @@ from financial_store import InvoiceStore, BalanceStore, PaymentStore, ExchangeRa
 from invoice_processor import process_invoice, generate_ai_insights
 from kpi_engine import compute_all_kpis, get_cashflow_timeseries, get_status_distribution
 from auth import UserStore, login_required, admin_required
+import email_service
 from trips_store import TripsStore, TRIP_DOCS, VISA_DOCS
 from client_store import ClientStore
 from employee_store import DepartmentStore, EmployeeStore, strip_sensitive
@@ -361,6 +362,7 @@ def login():
                 action='auth.login', actor_id=user['id'], actor_email=user['email'],
                 entity_type='user', entity_id=user['id'],
                 ip=client_ip, ok=True,
+                details={'force_password_reset': bool(user_store.must_change_password(user['id']))},
             )
             return redirect(url_for('index'))
         logger.warning('login_failed email=%s ip=%s', email, client_ip)
@@ -422,16 +424,102 @@ def api_audit_list():
 @admin_required
 @audit(action='user.create', entity='user', entity_arg='email')
 def api_auth_add_user():
-    data = request.get_json(force=True)
+    """Create a user account.
+
+    If `password` is empty/missing, the server generates a secure temp
+    password and emails it to the user. The user is forced to change
+    the password on first login. If SMTP is not configured, the plain
+    password is returned in the response so the admin can communicate
+    it manually (one-time only).
+    """
+    data = request.get_json(force=True) or {}
     try:
-        user = user_store.add_user(
+        user, plain_password = user_store.add_user(
             email=data.get('email', ''),
-            password=data.get('password', ''),
+            password=data.get('password', ''),  # empty => auto-generated
             name=data.get('name', ''),
+            role=(data.get('role') or 'user'),
+            force_password_reset=True,
         )
-        return jsonify({'status': 'ok', 'user': user})
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
+
+    # Send credentials email
+    send_status = {'sent': False, 'reason': 'send_not_attempted'}
+    if email_service.is_configured():
+        send_status = email_service.send_credentials(
+            to_email=user['email'],
+            name=user['name'],
+            password=plain_password,
+            role=user['role'],
+            is_resend=False,
+        )
+        if send_status.get('sent'):
+            user_store.mark_credentials_sent(user['id'])
+            audit_store.record(
+                action='user.credentials_emailed', actor_id=session.get('user_id', ''),
+                actor_email=session.get('user_email', ''),
+                entity_type='user', entity_id=user['id'],
+                ip=request.headers.get('X-Forwarded-For', request.remote_addr) or '', ok=True,
+            )
+
+    response = {
+        'status': 'ok',
+        'user':   user_store.get_user_by_id(user['id']) or user,
+        'email_sent':   bool(send_status.get('sent')),
+        'email_reason': send_status.get('reason'),
+        'smtp_configured': email_service.is_configured(),
+    }
+    # Only reveal the plain password when the email did NOT succeed.
+    # This is a fallback so the admin can communicate it out-of-band.
+    if not send_status.get('sent'):
+        response['plain_password'] = plain_password
+        response['plain_password_warning'] = (
+            "L'email n'a pas pu etre envoye. Communiquez ce mot de passe "
+            "manuellement et de maniere securisee — il ne sera plus affiche."
+        )
+    return jsonify(response)
+
+
+@app.route('/api/auth/resend_credentials', methods=['POST'])
+@admin_required
+@audit(action='user.resend_credentials', entity='user', entity_arg='id')
+def api_auth_resend_credentials():
+    """Regenerate a temp password for an existing user and email it.
+
+    Always rotates the password (no 'just re-send the same one' option,
+    because we don't store plaintexts). The user must change it again
+    on next login.
+    """
+    data = request.get_json(force=True) or {}
+    uid = (data.get('id') or '').strip()
+    user, plain_password = user_store.reset_password(uid)
+    if not user:
+        return jsonify({'error': 'Utilisateur non trouvé'}), 404
+
+    send_status = {'sent': False, 'reason': 'send_not_attempted'}
+    if email_service.is_configured():
+        send_status = email_service.send_credentials(
+            to_email=user['email'], name=user['name'],
+            password=plain_password, role=user['role'], is_resend=True,
+        )
+        if send_status.get('sent'):
+            user_store.mark_credentials_sent(uid)
+
+    response = {
+        'status': 'ok',
+        'user':   user_store.get_user_by_id(uid) or user,
+        'email_sent':   bool(send_status.get('sent')),
+        'email_reason': send_status.get('reason'),
+        'smtp_configured': email_service.is_configured(),
+    }
+    if not send_status.get('sent'):
+        response['plain_password'] = plain_password
+        response['plain_password_warning'] = (
+            "L'email n'a pas pu etre envoye. Communiquez ce mot de passe "
+            "manuellement — il ne sera plus affiche."
+        )
+    return jsonify(response)
 
 
 @app.route('/api/auth/remove_user', methods=['POST'])
@@ -465,17 +553,90 @@ def api_auth_toggle_user():
 @login_required
 @audit(action='user.change_password', entity='user', entity_arg='id')
 def api_auth_change_password():
-    data = request.get_json(force=True)
-    target_id = data.get('id', session.get('user_id'))
-    # Non-admin can only change own password
-    if session.get('user_role') != 'admin' and target_id != session.get('user_id'):
+    """Change the password of a user.
+
+    - A user changing their OWN password must provide the current one
+      (unless they are flagged force_password_reset — first login flow).
+    - An admin changing someone else's password does not need the current
+      password but the target must change theirs again on next login.
+    """
+    data = request.get_json(force=True) or {}
+    target_id = (data.get('id') or session.get('user_id') or '').strip()
+    is_self = (target_id == session.get('user_id'))
+    is_admin = (session.get('user_role') == 'admin')
+
+    if not is_admin and not is_self:
         return jsonify({'error': 'Non autorisé'}), 403
+
+    new_password = data.get('password', '')
+    if not new_password:
+        return jsonify({'error': 'Nouveau mot de passe requis.'}), 400
+
+    # Self-change: require current password unless force-reset is set
+    if is_self:
+        must_force = user_store.must_change_password(target_id)
+        current_pw = data.get('current_password', '')
+        if not must_force:
+            if not current_pw:
+                return jsonify({'error': 'Mot de passe actuel requis.'}), 400
+            if not user_store.verify_current_password(target_id, current_pw):
+                return jsonify({'error': 'Mot de passe actuel incorrect.'}), 403
+
+    # Admin changing someone else's password → mark force-reset so the
+    # target must change it again on next login (we just gave them a
+    # password they didn't choose).
+    if is_admin and not is_self:
+        try:
+            if not user_store.change_password(target_id, new_password):
+                return jsonify({'error': 'Utilisateur non trouvé'}), 404
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        # Re-flag force_password_reset since admin set this
+        db.execute("UPDATE users SET force_password_reset = TRUE WHERE id = %s", (target_id,))
+        return jsonify({'status': 'ok'})
+
+    # Self-change path
     try:
-        if user_store.change_password(target_id, data.get('password', '')):
+        if user_store.change_password(target_id, new_password):
             return jsonify({'status': 'ok'})
         return jsonify({'error': 'Utilisateur non trouvé'}), 404
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/auth/me')
+@login_required
+def api_auth_me():
+    """Return the current user with force_password_reset flag for the UI."""
+    uid = session.get('user_id', '')
+    user = user_store.get_user_by_id(uid) or {}
+    return jsonify({
+        'user':                  user,
+        'force_password_reset':  bool(user.get('force_password_reset')),
+        'smtp_configured':       email_service.is_configured(),
+    })
+
+
+@app.route('/api/auth/smtp_status')
+@admin_required
+def api_auth_smtp_status():
+    return jsonify(email_service.status())
+
+
+@app.route('/api/auth/smtp_test', methods=['POST'])
+@admin_required
+@rate_limit(tag='smtp_test', max_requests=3, window_seconds=300, by='user')
+@audit(action='smtp.test', entity='smtp')
+def api_auth_smtp_test():
+    data = request.get_json(force=True) or {}
+    to_email = (data.get('to') or session.get('user_email') or '').strip()
+    if not to_email or '@' not in to_email:
+        return jsonify({'error': 'Email destinataire invalide.'}), 400
+    result = email_service.send_test(to_email)
+    if result.get('sent'):
+        return jsonify({'status': 'ok'})
+    return jsonify({'error': f"Echec: {result.get('reason', 'unknown')}",
+                    'detail': result.get('detail', '')}), 502
 
 
 # ═══════════════════════════════════════════════════════════════════
