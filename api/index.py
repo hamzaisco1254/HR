@@ -894,44 +894,271 @@ def api_clear_history():
 @app.route('/api/dashboard/data')
 @login_required
 def api_dashboard_data():
+    """Rich dashboard payload — combines invoice/balance core with the new
+    finance module (customer_invoices, planned_expenses, statements P&L,
+    forecast, risk alerts) for the redesigned Vue d'ensemble."""
+    today    = datetime.utcnow().date()
+    year     = today.year
     invoices = inv_store.get_all()
     accounts = bal_store.get_all()
-    total_inv = len(invoices)
-    paid = [i for i in invoices if i.get('payment_status') == 'paid']
-    unpaid = [i for i in invoices if i.get('payment_status') == 'unpaid']
-    overdue = [i for i in invoices if i.get('payment_status') == 'overdue']
 
-    def _sum(lst): return sum(float(i.get('amount', 0)) for i in lst)
+    # ── Helpers ────────────────────────────────────────────────────
+    def _to_tnd(amount, currency):
+        try: a = float(amount or 0)
+        except (TypeError, ValueError): return 0.0
+        return fx_rates.to_tnd(a, currency or 'TND')
+
     def _fmt(v):
-        if abs(v) >= 1_000_000: return f"{v/1_000_000:,.1f}M"
-        if abs(v) >= 1_000: return f"{v/1_000:,.1f}K"
-        return f"{v:,.2f}"
+        if abs(v) >= 1_000_000: return f"{v/1_000_000:,.1f}M".replace(',', ' ')
+        if abs(v) >= 1_000:     return f"{v/1_000:,.1f}K".replace(',', ' ')
+        return f"{v:,.2f}".replace(',', ' ')
 
-    total_amt = _sum(invoices)
-    net_cash = sum(fx_rates.to_tnd(float(a.get('balance', 0)), a.get('currency', 'TND')) for a in accounts)
+    def _fmt_tnd(v): return f"{_fmt(v)} TND"
 
-    stats = {
-        'total_invoices': total_inv, 'total_amount_formatted': f"{_fmt(total_amt)} (multi-devises)",
-        'paid_count': len(paid), 'paid_amount_formatted': _fmt(_sum(paid)),
-        'unpaid_count': len(unpaid), 'unpaid_amount_formatted': _fmt(_sum(unpaid)),
-        'overdue_count': len(overdue), 'overdue_amount_formatted': _fmt(_sum(overdue)),
-        'net_cash_formatted': f"{_fmt(net_cash)} TND",
-    }
-    cashflow = get_cashflow_timeseries(inv_store, pay_store)
-    status_dist = get_status_distribution(inv_store)
-    supplier_totals = inv_store.total_by_supplier()
+    # ── Vendor invoices buckets (with TND-normalized sums) ─────────
+    paid_inv    = [i for i in invoices if i.get('payment_status') == 'paid']
+    unpaid_inv  = [i for i in invoices if i.get('payment_status') == 'unpaid']
+    overdue_inv = [i for i in invoices if i.get('payment_status') == 'overdue']
+
+    def _sum_tnd(lst): return sum(_to_tnd(i.get('amount'), i.get('currency')) for i in lst)
+    paid_amt    = _sum_tnd(paid_inv)
+    unpaid_amt  = _sum_tnd(unpaid_inv)   # ← engagement non encore decaisse
+    overdue_amt = _sum_tnd(overdue_inv)
+    total_inv_amt = paid_amt + unpaid_amt + overdue_amt  # TOUTES factures = depense accrual
+
+    # YTD expenses (only invoices dated this year)
+    invoices_ytd = [i for i in invoices if (i.get('invoice_date') or '').startswith(str(year))]
+    ytd_vendor_amt = _sum_tnd(invoices_ytd)
+
+    # Cash on hand (all balances normalized to TND)
+    net_cash = sum(_to_tnd(a.get('balance'), a.get('currency')) for a in accounts)
+
+    # ── Customer invoices (revenue side, from PR-4 finance) ────────
+    cust_invoices = []
+    try:
+        cust_invoices = income_store.list({'year': year})
+    except Exception:
+        pass
+    cust_total_expected = sum(float(c.get('amount_tnd') or 0) for c in cust_invoices)
+    cust_total_received = sum(float(c.get('received_tnd') or 0) for c in cust_invoices)
+    cust_paid_count   = sum(1 for c in cust_invoices if c.get('status') == 'paid')
+    cust_sent_count   = sum(1 for c in cust_invoices if c.get('status') == 'sent')
+    cust_draft_count  = sum(1 for c in cust_invoices if c.get('status') == 'draft')
+    cust_overdue = []
+    try:
+        cust_overdue = income_store.overdue()
+    except Exception:
+        pass
+    cust_overdue_amt = sum(float(c.get('amount_tnd') or 0) for c in cust_overdue)
+
+    # ── Planned expenses (PR-5) ────────────────────────────────────
+    planned_total = 0.0
+    planned_recurring_monthly = 0.0
+    planned_count = 0
+    try:
+        from datetime import date as _date
+        period_start = _date(year, 1, 1)
+        period_end   = _date(year, 12, 31)
+        for occ in planned_store.occurrences(period_start, period_end, only_pending=True):
+            planned_total += float(occ.get('amount_tnd') or 0)
+        planned_list = planned_store.list({'status': 'planned'})
+        planned_count = len(planned_list)
+        for pe in planned_list:
+            if pe.get('is_recurring') and pe.get('frequency') == 'monthly':
+                planned_recurring_monthly += float(pe.get('amount_tnd') or 0)
+            elif pe.get('is_recurring') and pe.get('frequency') == 'quarterly':
+                planned_recurring_monthly += float(pe.get('amount_tnd') or 0) / 3
+            elif pe.get('is_recurring') and pe.get('frequency') == 'yearly':
+                planned_recurring_monthly += float(pe.get('amount_tnd') or 0) / 12
+    except Exception:
+        pass
+
+    # ── YTD P&L derived figures via statements_engine ──────────────
+    pnl_totals = {}
+    try:
+        pnl = statements_engine.compute_pnl(fx_rates, year, month=None)
+        pnl_totals = {
+            'revenue':            pnl['revenue'],
+            'charges_externes':   pnl['totals']['charges_externes'],
+            'charges_personnel':  pnl['totals']['charges_personnel'],
+            'taxes':              pnl['totals']['taxes'],
+            'charges_financieres': pnl['totals']['charges_financieres'],
+            'ebitda':             pnl['totals']['ebitda'],
+            'operating_income':   pnl['totals']['operating_income'],
+            'net_before_tax':     pnl['totals'].get('net_before_tax', 0),
+            'corporate_tax':      pnl['totals'].get('corporate_tax_provision', 0),
+            'net_result':         pnl['totals']['net_result'],
+            'total_expenses':     pnl['totals']['total_expenses'],
+        }
+    except Exception:
+        logger.exception('dashboard_pnl_failed')
+
+    revenue_ytd = pnl_totals.get('revenue', cust_total_expected)
+    expenses_full_ytd = pnl_totals.get('total_expenses', ytd_vendor_amt)
+    net_result_ytd    = pnl_totals.get('net_result', revenue_ytd - expenses_full_ytd)
+    net_margin_pct    = (net_result_ytd / revenue_ytd * 100) if revenue_ytd > 0 else None
+
+    # ── Top suppliers, top clients, expense by category ────────────
+    # Top suppliers (existing kpi_engine helper)
+    supplier_totals_dict = inv_store.total_by_supplier()
+    supplier_totals_tnd  = {}
+    # Re-aggregate in TND for accuracy
+    by_supplier_tnd: dict = {}
+    for i in invoices:
+        name = i.get('supplier_name') or 'Inconnu'
+        by_supplier_tnd[name] = by_supplier_tnd.get(name, 0.0) + _to_tnd(i.get('amount'), i.get('currency'))
+    top_suppliers = sorted(by_supplier_tnd.items(), key=lambda x: x[1], reverse=True)[:7]
+
+    # Top clients (NEW)
+    by_client_tnd: dict = {}
+    for c in cust_invoices:
+        name = c.get('client_name') or 'Inconnu'
+        by_client_tnd[name] = by_client_tnd.get(name, 0.0) + float(c.get('amount_tnd') or 0)
+    top_clients = sorted(by_client_tnd.items(), key=lambda x: x[1], reverse=True)[:7]
+
+    # Expense by AI category (NEW)
+    from invoice_processor import CATEGORY_LABELS as _CAT_LABELS
+    by_cat_tnd: dict = {}
+    for i in invoices_ytd:
+        cat = (i.get('category') or 'autre').lower()
+        label = _CAT_LABELS.get(cat, cat.capitalize() or 'Autre')
+        by_cat_tnd[label] = by_cat_tnd.get(label, 0.0) + _to_tnd(i.get('amount'), i.get('currency'))
+    expense_by_category = sorted(by_cat_tnd.items(), key=lambda x: x[1], reverse=True)
+
+    # Monthly revenue vs expenses (12 columns) — combines cashflow timeseries
+    monthly_rev_vs_exp = []
+    try:
+        rev_break = statements_engine.compute_revenue_breakdown(fx_rates, year)
+        exp_break = statements_engine.compute_expense_breakdown(fx_rates, year)
+        for m in range(1, 13):
+            r = next((x['expected_tnd'] for x in rev_break['by_month'] if x['month'] == m), 0.0)
+            e = next((x['amount_tnd']   for x in exp_break['by_month'] if x['month'] == m), 0.0)
+            monthly_rev_vs_exp.append({'month': m, 'revenue': r, 'expense': e})
+    except Exception:
+        logger.exception('dashboard_monthly_failed')
+
+    # ── Risk alerts (PR-7) ─────────────────────────────────────────
+    risk_alerts = []
+    try:
+        risk_alerts = forecast_engine.compute_risk_alerts(fx_rates)
+    except Exception:
+        pass
+
+    # ── Forecast snapshot (next 3 months) ──────────────────────────
+    forecast_snapshot = None
+    try:
+        fc = forecast_engine.compute_cashflow_forecast(fx_rates, months_ahead=3)
+        forecast_snapshot = {
+            'method':     fc['method_used'],
+            'confidence': fc['confidence'],
+            'months':     [{
+                'year': m['year'], 'month': m['month'],
+                'revenue': m['revenue_exp'], 'expense': m['expense_exp'],
+                'net':     m['net_expected'], 'cumulative': m['cumulative_expected'],
+            } for m in fc['forecast']],
+        }
+    except Exception:
+        pass
+
+    # Currency distribution (existing)
     currency_dist = {}
     for inv in invoices:
         c = inv.get('currency', 'TND')
         currency_dist[c] = currency_dist.get(c, 0) + float(inv.get('amount', 0))
-    kpis = compute_all_kpis(inv_store, bal_store, pay_store, fx_rates)
+
+    # Legacy KPI list (kept for the dedicated KPIs page)
+    try:
+        kpis = compute_all_kpis(inv_store, bal_store, pay_store, fx_rates)
+    except Exception:
+        kpis = []
+
+    # AI insight (kept)
     ai_insight = None
     try: ai_insight = generate_ai_insights(invoices, accounts, kpis)
     except: pass
+
+    # ── Existing time series (cash flow 12 mois) ───────────────────
+    cashflow      = get_cashflow_timeseries(inv_store, pay_store)
+    status_dist   = get_status_distribution(inv_store)
+
+    # ── Build response ─────────────────────────────────────────────
+    stats = {
+        # Legacy keys (kept so old UI still works during transition)
+        'total_invoices':          len(invoices),
+        'total_amount_formatted':  f"{_fmt(total_inv_amt)} TND",
+        'paid_count':              len(paid_inv),
+        'paid_amount_formatted':   _fmt(paid_amt),
+        'unpaid_count':            len(unpaid_inv),
+        'unpaid_amount_formatted': _fmt(unpaid_amt),
+        'overdue_count':           len(overdue_inv),
+        'overdue_amount_formatted': _fmt(overdue_amt),
+        'net_cash_formatted':      _fmt_tnd(net_cash),
+    }
+
+    overview = {
+        # Hero KPIs (4)
+        'revenue_ytd':             {'value': revenue_ytd,        'formatted': _fmt_tnd(revenue_ytd),
+                                    'sub': f'{len(cust_invoices)} facture{"s" if len(cust_invoices)!=1 else ""} clients'},
+        'revenue_received':        {'value': cust_total_received,'formatted': _fmt_tnd(cust_total_received),
+                                    'sub': (f'{round(100*cust_total_received/revenue_ytd)}% encaisses' if revenue_ytd > 0 else '—')},
+        'expenses_full_ytd':       {'value': expenses_full_ytd,  'formatted': _fmt_tnd(expenses_full_ytd),
+                                    'sub': 'Payees + a payer + estimees'},
+        'net_result_ytd':          {'value': net_result_ytd,     'formatted': _fmt_tnd(net_result_ytd),
+                                    'sub': (f'{net_margin_pct:.1f}% marge nette' if net_margin_pct is not None else '—')},
+
+        # Secondary KPIs (4)
+        'to_pay_suppliers':        {'value': unpaid_amt + overdue_amt,
+                                    'formatted': _fmt_tnd(unpaid_amt + overdue_amt),
+                                    'sub': f'{len(unpaid_inv) + len(overdue_inv)} facture{"s" if (len(unpaid_inv)+len(overdue_inv))!=1 else ""} fournisseurs'},
+        'to_collect_clients':      {'value': cust_overdue_amt,
+                                    'formatted': _fmt_tnd(cust_overdue_amt),
+                                    'sub': f'{len(cust_overdue)} en retard'},
+        'cash_on_hand':            {'value': net_cash, 'formatted': _fmt_tnd(net_cash),
+                                    'sub': f'{len(accounts)} compte{"s" if len(accounts)!=1 else ""}'},
+        'planned_commitments':     {'value': planned_total, 'formatted': _fmt_tnd(planned_total),
+                                    'sub': f'~{_fmt_tnd(planned_recurring_monthly)}/mois recurrents'},
+
+        # Status strips
+        'vendor_status': {
+            'paid':    {'count': len(paid_inv),    'amount': _fmt_tnd(paid_amt)},
+            'unpaid':  {'count': len(unpaid_inv),  'amount': _fmt_tnd(unpaid_amt)},
+            'overdue': {'count': len(overdue_inv), 'amount': _fmt_tnd(overdue_amt)},
+        },
+        'customer_status': {
+            'draft':   {'count': cust_draft_count},
+            'sent':    {'count': cust_sent_count},
+            'paid':    {'count': cust_paid_count, 'amount': _fmt_tnd(cust_total_received)},
+            'overdue': {'count': len(cust_overdue), 'amount': _fmt_tnd(cust_overdue_amt)},
+        },
+        'planned_count': planned_count,
+        'risk_count':    sum(1 for a in risk_alerts if a.get('severity') in ('high', 'med')),
+
+        # Chart data
+        'monthly_rev_vs_exp':  monthly_rev_vs_exp,
+        'expense_by_category': [{'label': l, 'amount': v} for l, v in expense_by_category],
+        'top_clients':         [{'name': n, 'amount': v} for n, v in top_clients],
+        'top_suppliers':       [{'name': n, 'amount': v} for n, v in top_suppliers],
+
+        # Forecast + risk
+        'forecast_3m':  forecast_snapshot,
+        'risk_alerts':  risk_alerts[:6],
+
+        # Year context
+        'year': year,
+    }
+
     return jsonify({
-        'stats': stats, 'cashflow': cashflow, 'status_dist': status_dist,
-        'supplier_totals': supplier_totals, 'currency_dist': currency_dist,
-        'kpis': kpis, 'ai_insight': ai_insight, 'overdue_invoices': overdue[:10],
+        # Legacy fields (kept for backward compatibility)
+        'stats':            stats,
+        'cashflow':         cashflow,
+        'status_dist':      status_dist,
+        'supplier_totals':  supplier_totals_dict,
+        'currency_dist':    currency_dist,
+        'kpis':             kpis,
+        'ai_insight':       ai_insight,
+        'overdue_invoices': overdue_inv[:10],
+        # New rich overview
+        'overview':         overview,
     })
 
 

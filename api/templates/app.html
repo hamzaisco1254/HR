@@ -1905,19 +1905,106 @@ select{cursor:pointer;appearance:none;
 </div>
 
 <!-- ═══════ OVERVIEW ═══════ -->
+<style>
+.ov-hero-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:14px;}
+.ov-second-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px;}
+@media (max-width:980px){.ov-hero-grid,.ov-second-grid{grid-template-columns:repeat(2,1fr);}}
+@media (max-width:560px){.ov-hero-grid,.ov-second-grid{grid-template-columns:1fr;}}
+.ov-tile{border-radius:var(--radius);padding:16px 18px;border:1px solid var(--border-l);position:relative;overflow:hidden;}
+.ov-tile.hero{padding:20px 22px;}
+.ov-tile .ov-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:0.85;}
+.ov-tile .ov-value{font-size:24px;font-weight:900;margin-top:6px;font-variant-numeric:tabular-nums;}
+.ov-tile.hero .ov-value{font-size:26px;}
+.ov-tile .ov-sub{font-size:11px;margin-top:4px;opacity:0.75;font-weight:600;}
+.ov-tile .ov-icon{position:absolute;top:14px;right:14px;opacity:0.18;}
+.ov-strip{display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap;}
+.ov-strip-card{flex:1;min-width:240px;background:white;border:1px solid var(--border-l);border-radius:var(--radius);padding:14px;}
+.ov-strip-card h5{margin:0 0 8px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted);}
+.ov-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:10px;font-size:11px;font-weight:700;margin:3px 4px 3px 0;}
+.ov-pill .num{font-size:12px;font-weight:900;}
+.ov-chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
+@media (max-width:980px){.ov-chart-grid{grid-template-columns:1fr;}}
+.ov-mini-list{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
+.ov-mini-list .row{display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px dashed var(--border-l);}
+.ov-mini-list .row:last-child{border-bottom:none;}
+.ov-alert{padding:10px 14px;border-radius:8px;font-size:11px;border-left:4px solid;margin-bottom:6px;}
+.ov-alert.high{background:#fee2e2;color:#991b1b;border-color:#dc2626;}
+.ov-alert.med{background:#fef3c7;color:#92400e;border-color:#d97706;}
+.ov-alert.low{background:#dbeafe;color:#1e40af;border-color:#3b82f6;}
+</style>
+
 <div class="page {% if active_tab=='overview' %}active{% endif %}" id="pg-overview">
-  <div class="page-header"><h2>Vue d'ensemble</h2><p>Tableau de bord financier en temps reel</p></div>
-  <div class="insight-box" id="ai-insight" style="display:none;"><div class="tag"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg> Analyse IA</div><div id="ai-insight-text"></div></div>
-  <div class="stats-grid" id="top-stats"></div>
-  <div class="chart-row">
-    <div class="chart-box"><h4>Cash Flow — 12 mois</h4><canvas id="chart-cashflow" height="220"></canvas></div>
-    <div class="chart-box"><h4>Statut Factures</h4><canvas id="chart-status" height="220"></canvas></div>
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div><h2>Vue d'ensemble</h2><p>Tableau de bord en temps reel — annee <span id="ov-year">—</span></p></div>
+    <button class="btn btn-outline btn-sm" onclick="loadDashboard()" title="Actualiser">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      Actualiser
+    </button>
   </div>
-  <div class="chart-row">
-    <div class="chart-box"><h4>Top Fournisseurs</h4><canvas id="chart-suppliers" height="220"></canvas></div>
-    <div class="chart-box"><h4>Devises</h4><canvas id="chart-currency" height="220"></canvas></div>
+
+  <!-- AI insight (kept) -->
+  <div class="insight-box" id="ai-insight" style="display:none;">
+    <div class="tag"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg> Analyse IA</div>
+    <div id="ai-insight-text"></div>
   </div>
-  <div class="card" id="alerts-card" style="display:none;"><h3><span class="card-icon" style="background:var(--red-soft);color:var(--red);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span> Factures en Retard</h3><div id="alerts-list"></div></div>
+
+  <!-- Hero KPIs row (4) -->
+  <div class="ov-hero-grid" id="ov-hero">
+    <!-- populated by JS -->
+  </div>
+
+  <!-- Secondary KPIs row (4) -->
+  <div class="ov-second-grid" id="ov-secondary">
+    <!-- populated by JS -->
+  </div>
+
+  <!-- Status strips: vendor / customer / planned / risks -->
+  <div class="ov-strip" id="ov-strips">
+    <!-- populated by JS -->
+  </div>
+
+  <!-- Charts: 6 panels in 2-col grid -->
+  <div class="ov-chart-grid" style="margin-bottom:16px;">
+    <div class="chart-box">
+      <h4>Revenus vs Depenses (mensuel)</h4>
+      <canvas id="ov-chart-revexp" height="220"></canvas>
+    </div>
+    <div class="chart-box">
+      <h4>Cash flow projete — 3 prochains mois</h4>
+      <canvas id="ov-chart-forecast" height="220"></canvas>
+      <p id="ov-forecast-note" style="font-size:10px;color:var(--muted);margin:8px 0 0;"></p>
+    </div>
+  </div>
+
+  <div class="ov-chart-grid" style="margin-bottom:16px;">
+    <div class="chart-box">
+      <h4>Depenses par categorie</h4>
+      <canvas id="ov-chart-expcat" height="220"></canvas>
+    </div>
+    <div class="chart-box">
+      <h4>Devises (factures fournisseurs)</h4>
+      <canvas id="ov-chart-currency" height="220"></canvas>
+    </div>
+  </div>
+
+  <div class="ov-chart-grid">
+    <div class="chart-box">
+      <h4>Top clients</h4>
+      <div id="ov-top-clients" style="margin-top:10px;"></div>
+    </div>
+    <div class="chart-box">
+      <h4>Top fournisseurs</h4>
+      <div id="ov-top-suppliers" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <!-- Risk alerts panel -->
+  <div class="card" id="ov-risk-card" style="margin-top:16px;display:none;">
+    <h3><span class="card-icon" style="background:var(--red-soft,#fee2e2);color:var(--red,#dc2626);">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </span> Alertes &amp; risques</h3>
+    <div id="ov-risk-list" style="margin-top:14px;"></div>
+  </div>
 </div>
 
 <!-- ═══════ UPLOAD ═══════ -->
@@ -2207,20 +2294,190 @@ function generateDocument(dt){const isA=dt==='attestation';const form=document.g
 function refreshHistory(){fetch('/api/history?type='+document.getElementById('hist_filter').value).then(r=>r.json()).then(d=>{const tb=document.getElementById('hist_tbody');const docs=d.documents;if(!docs.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">Aucun document genere.</td></tr>';}else{tb.innerHTML=docs.map(d=>`<tr><td>${d.date||''}</td><td style="font-weight:600;">${d.reference||''}</td><td>${d.doc_type==='attestation'?'<span class="badge badge-att">Attestation</span>':'<span class="badge badge-mis">Mission</span>'}</td><td>${d.employee_name||''}</td><td style="font-size:12px;color:var(--muted);">${d.file_path||''}</td></tr>`).join('');}document.getElementById('stat_total').textContent='Total: '+docs.length;document.getElementById('stat_att').textContent='Attestations: '+docs.filter(d=>d.doc_type==='attestation').length;document.getElementById('stat_mis').textContent='Missions: '+docs.filter(d=>d.doc_type==='ordre_mission').length;}).catch(e=>toast('Erreur: '+e,'error'));}
 function clearHistory(){if(!confirm("Effacer l'historique?"))return;fetch('/api/clear_history',{method:'POST'}).then(r=>r.json()).then(()=>{refreshHistory();toast('Historique efface','success');}).catch(e=>toast('Erreur: '+e,'error'));}
 
-/* ── Dashboard ───────────────────────────────────────────── */
-let chartCF,chartST,chartSU,chartCU;let uploadedFilename='';
-async function loadDashboard(){try{const d=await api('/api/dashboard/data');const s=d.stats;document.getElementById('top-stats').innerHTML=`
-<div class="stat-card blue"><div class="label">Total Factures</div><div class="value">${s.total_invoices}</div><div class="sub">${s.total_amount_formatted}</div></div>
-<div class="stat-card green"><div class="label">Payees</div><div class="value">${s.paid_count}</div><div class="sub">${s.paid_amount_formatted}</div></div>
-<div class="stat-card amber"><div class="label">Impayees</div><div class="value">${s.unpaid_count}</div><div class="sub">${s.unpaid_amount_formatted}</div></div>
-<div class="stat-card red"><div class="label">En Retard</div><div class="value">${s.overdue_count}</div><div class="sub">${s.overdue_amount_formatted}</div></div>
-<div class="stat-card green"><div class="label">Tresorerie Nette</div><div class="value">${s.net_cash_formatted}</div><div class="sub">Tous comptes (TND)</div></div>`;
-if(d.overdue_invoices?.length){document.getElementById('alerts-card').style.display='block';document.getElementById('alerts-list').innerHTML=d.overdue_invoices.map(i=>`<div style="padding:10px 0;border-bottom:1px solid var(--border-l);display:flex;justify-content:space-between;align-items:center;"><span><strong>${i.supplier_name}</strong> — ${i.invoice_ref||'N/A'}</span><span style="color:var(--red);font-weight:800;">${Number(i.amount).toLocaleString('fr-FR')} ${i.currency}</span></div>`).join('');}else document.getElementById('alerts-card').style.display='none';
-const cf=d.cashflow;if(chartCF)chartCF.destroy();chartCF=new Chart(document.getElementById('chart-cashflow'),{type:'bar',data:{labels:cf.labels,datasets:[{label:'Entrees',data:cf.inflows,backgroundColor:'rgba(16,185,129,.6)',borderRadius:6,borderSkipped:false},{label:'Sorties',data:cf.outflows,backgroundColor:'rgba(239,68,68,.6)',borderRadius:6,borderSkipped:false}]},options:{responsive:true,scales:{y:{beginAtZero:true,grid:{color:'rgba(0,0,0,.04)'},ticks:{font:{size:11}}},x:{grid:{display:false},ticks:{font:{size:11}}}},plugins:{legend:{position:'bottom',labels:{usePointStyle:true,pointStyle:'circle',padding:16,font:{size:11,weight:'600'}}}}}});
-const st=d.status_dist;if(chartST)chartST.destroy();chartST=new Chart(document.getElementById('chart-status'),{type:'doughnut',data:{labels:['Payees','Impayees','En retard'],datasets:[{data:[st.counts.paid,st.counts.unpaid,st.counts.overdue],backgroundColor:['#10b981','#f59e0b','#ef4444'],borderWidth:0,borderRadius:4}]},options:{responsive:true,cutout:'68%',plugins:{legend:{position:'bottom',labels:{usePointStyle:true,pointStyle:'circle',padding:16,font:{size:11,weight:'600'}}}}}});
-const su=d.supplier_totals;if(chartSU)chartSU.destroy();chartSU=new Chart(document.getElementById('chart-suppliers'),{type:'bar',data:{labels:Object.keys(su).slice(0,8),datasets:[{label:'TND',data:Object.values(su).slice(0,8),backgroundColor:'rgba(214,30,139,.7)',borderRadius:6,borderSkipped:false}]},options:{responsive:true,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{font:{size:11}}},y:{grid:{display:false},ticks:{font:{size:11,weight:'600'}}}}}});
-const cu=d.currency_dist;if(chartCU)chartCU.destroy();chartCU=new Chart(document.getElementById('chart-currency'),{type:'pie',data:{labels:Object.keys(cu),datasets:[{data:Object.values(cu),backgroundColor:['#0f1628','#D61E8B','#3b82f6','#10b981','#7c3aed'],borderWidth:2,borderColor:'#fff'}]},options:{responsive:true,plugins:{legend:{position:'bottom',labels:{usePointStyle:true,pointStyle:'circle',padding:16,font:{size:11,weight:'600'}}}}}});
-if(d.ai_insight){document.getElementById('ai-insight').style.display='block';document.getElementById('ai-insight-text').textContent=d.ai_insight;}}catch(e){toast('Erreur dashboard: '+e,'error');}}
+/* ══════════════════════════════════════════════════════════════
+   DASHBOARD — Vue d'ensemble (PR-9)
+   ══════════════════════════════════════════════════════════════ */
+const _ovCharts = {};
+let uploadedFilename='';
+const OV_MONTH_LABELS = ['Jan','Fev','Mar','Avr','Mai','Jun','Jul','Aou','Sep','Oct','Nov','Dec'];
+
+function _ovDestroy(id){if(_ovCharts[id]){_ovCharts[id].destroy();delete _ovCharts[id];}}
+
+function _ovHeroTile(label, value, sub, gradient, iconSvg){
+  return `<div class="ov-tile hero" style="background:${gradient};color:#fff;">
+    <div class="ov-icon">${iconSvg||''}</div>
+    <div class="ov-label">${escHtml(label)}</div>
+    <div class="ov-value">${escHtml(value)}</div>
+    <div class="ov-sub">${escHtml(sub||'')}</div>
+  </div>`;
+}
+function _ovSecTile(label, value, sub, color, bg){
+  return `<div class="ov-tile" style="background:${bg};color:${color};">
+    <div class="ov-label">${escHtml(label)}</div>
+    <div class="ov-value">${escHtml(value)}</div>
+    <div class="ov-sub">${escHtml(sub||'')}</div>
+  </div>`;
+}
+
+async function loadDashboard(){
+  let d;
+  try{ d = await api('/api/dashboard/data'); }
+  catch(e){ toast('Erreur dashboard: '+e,'error'); return; }
+  const ov = d.overview || {};
+  if(ov.year) document.getElementById('ov-year').textContent = ov.year;
+
+  // ── AI insight
+  if(d.ai_insight){
+    document.getElementById('ai-insight').style.display='block';
+    document.getElementById('ai-insight-text').textContent = d.ai_insight;
+  }else{
+    document.getElementById('ai-insight').style.display='none';
+  }
+
+  // ── Hero tiles (4)
+  const SVG_REV    = `<svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>`;
+  const SVG_CASH   = `<svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>`;
+  const SVG_EXP    = `<svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="2 7 10.5 15.5 15.5 10.5 22 17"/><polyline points="16 17 22 17 22 11"/></svg>`;
+  const SVG_NET    = `<svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>`;
+  const r=ov.revenue_ytd||{}, rc=ov.revenue_received||{}, ex=ov.expenses_full_ytd||{}, n=ov.net_result_ytd||{};
+  const netPositive = (n.value||0) >= 0;
+  document.getElementById('ov-hero').innerHTML = [
+    _ovHeroTile("Revenu attendu", r.formatted||'—', r.sub||'',
+      'linear-gradient(135deg,#7c3aed 0%,#ec4899 100%)', SVG_REV),
+    _ovHeroTile("Revenu encaisse", rc.formatted||'—', rc.sub||'',
+      'linear-gradient(135deg,#059669 0%,#10b981 100%)', SVG_CASH),
+    _ovHeroTile("Total depenses", ex.formatted||'—', ex.sub||'',
+      'linear-gradient(135deg,#dc2626 0%,#f59e0b 100%)', SVG_EXP),
+    _ovHeroTile("Resultat net", n.formatted||'—', n.sub||'',
+      netPositive ? 'linear-gradient(135deg,#065f46 0%,#10b981 100%)'
+                  : 'linear-gradient(135deg,#7f1d1d 0%,#ef4444 100%)', SVG_NET),
+  ].join('');
+
+  // ── Secondary tiles (4)
+  const tp=ov.to_pay_suppliers||{}, tc=ov.to_collect_clients||{}, co=ov.cash_on_hand||{}, pc=ov.planned_commitments||{};
+  document.getElementById('ov-secondary').innerHTML = [
+    _ovSecTile("A payer fournisseurs", tp.formatted||'—', tp.sub||'', '#92400e', 'linear-gradient(135deg,#fef3c7 0%,#fde68a 100%)'),
+    _ovSecTile("A encaisser (retard)",  tc.formatted||'—', tc.sub||'', '#831843', 'linear-gradient(135deg,#fce7f3 0%,#fbcfe8 100%)'),
+    _ovSecTile("Tresorerie nette",      co.formatted||'—', co.sub||'', '#1e40af', 'linear-gradient(135deg,#dbeafe 0%,#bfdbfe 100%)'),
+    _ovSecTile("Engagements prevus",    pc.formatted||'—', pc.sub||'', '#581c87', 'linear-gradient(135deg,#ede9fe 0%,#ddd6fe 100%)'),
+  ].join('');
+
+  // ── Status strips (vendor / customer / planned / risks)
+  const vs = ov.vendor_status||{}, cs = ov.customer_status||{};
+  document.getElementById('ov-strips').innerHTML = `
+    <div class="ov-strip-card">
+      <h5>Factures fournisseurs</h5>
+      <span class="ov-pill" style="background:#d1fae5;color:#065f46;"><span class="num">${vs.paid?.count||0}</span> Payees · ${escHtml(vs.paid?.amount||'')}</span>
+      <span class="ov-pill" style="background:#fef3c7;color:#92400e;"><span class="num">${vs.unpaid?.count||0}</span> A payer · ${escHtml(vs.unpaid?.amount||'')}</span>
+      <span class="ov-pill" style="background:#fee2e2;color:#991b1b;"><span class="num">${vs.overdue?.count||0}</span> En retard · ${escHtml(vs.overdue?.amount||'')}</span>
+    </div>
+    <div class="ov-strip-card">
+      <h5>Factures clients</h5>
+      <span class="ov-pill" style="background:#e5e7eb;color:#4b5563;"><span class="num">${cs.draft?.count||0}</span> Brouillon</span>
+      <span class="ov-pill" style="background:#dbeafe;color:#1e40af;"><span class="num">${cs.sent?.count||0}</span> Envoyees</span>
+      <span class="ov-pill" style="background:#d1fae5;color:#065f46;"><span class="num">${cs.paid?.count||0}</span> Payees · ${escHtml(cs.paid?.amount||'')}</span>
+      <span class="ov-pill" style="background:#fee2e2;color:#991b1b;"><span class="num">${cs.overdue?.count||0}</span> En retard · ${escHtml(cs.overdue?.amount||'')}</span>
+    </div>
+    <div class="ov-strip-card">
+      <h5>Engagements &amp; alertes</h5>
+      <span class="ov-pill" style="background:#ede9fe;color:#581c87;"><span class="num">${ov.planned_count||0}</span> Depenses prevues</span>
+      <span class="ov-pill" style="background:${(ov.risk_count||0)>0?'#fee2e2':'#d1fae5'};color:${(ov.risk_count||0)>0?'#991b1b':'#065f46'};"><span class="num">${ov.risk_count||0}</span> Risque${(ov.risk_count||0)!==1?'s':''} actif${(ov.risk_count||0)!==1?'s':''}</span>
+    </div>
+  `;
+
+  // ── Chart 1: Revenue vs Expenses monthly
+  const months = ov.monthly_rev_vs_exp || [];
+  _ovDestroy('ov-chart-revexp');
+  _ovCharts['ov-chart-revexp'] = new Chart(document.getElementById('ov-chart-revexp').getContext('2d'),{
+    type:'bar',
+    data:{
+      labels: months.map(m=>OV_MONTH_LABELS[m.month-1]),
+      datasets:[
+        {label:'Revenus',  data: months.map(m=>m.revenue), backgroundColor:'rgba(16,185,129,.75)', borderRadius:5},
+        {label:'Depenses', data: months.map(m=>m.expense), backgroundColor:'rgba(239,68,68,.75)',  borderRadius:5},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{usePointStyle:true,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+Math.round(c.raw).toLocaleString('fr-FR')+' TND'}}},
+      scales:{y:{beginAtZero:true,ticks:{callback:v=>(v>=1000?(v/1000).toFixed(0)+'K':v)+' TND',font:{size:10}},grid:{color:'rgba(0,0,0,.04)'}},x:{grid:{display:false},ticks:{font:{size:11}}}}
+    }
+  });
+
+  // ── Chart 2: Forecast next 3 months
+  const fc = ov.forecast_3m;
+  _ovDestroy('ov-chart-forecast');
+  if(fc && fc.months && fc.months.length){
+    _ovCharts['ov-chart-forecast'] = new Chart(document.getElementById('ov-chart-forecast').getContext('2d'),{
+      data:{
+        labels: fc.months.map(m=>OV_MONTH_LABELS[m.month-1]+'-'+String(m.year).slice(-2)),
+        datasets:[
+          {type:'line',label:'Revenu prevu', data:fc.months.map(m=>m.revenue), borderColor:'#10b981', backgroundColor:'rgba(16,185,129,.15)', tension:0.3, fill:false, borderWidth:2},
+          {type:'line',label:'Depense prevue', data:fc.months.map(m=>m.expense), borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,.15)', tension:0.3, fill:false, borderWidth:2},
+          {type:'line',label:'Net cumule', data:fc.months.map(m=>m.cumulative), borderColor:'#7c3aed', tension:0.3, borderDash:[5,4], borderWidth:3},
+        ]
+      },
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{usePointStyle:true,font:{size:11}}}},scales:{y:{ticks:{callback:v=>(v>=1000?(v/1000).toFixed(0)+'K':v)+' TND',font:{size:10}}}}}
+    });
+    document.getElementById('ov-forecast-note').textContent =
+      `Methode CA: ${fc.method?.revenue||'?'} · Methode depenses: ${fc.method?.expense||'?'} — ${fc.confidence?.revenue||''}`;
+  }else{
+    document.getElementById('ov-forecast-note').textContent = 'Pas assez de donnees pour une projection.';
+  }
+
+  // ── Chart 3: Expense by category (pie)
+  const ec = ov.expense_by_category || [];
+  _ovDestroy('ov-chart-expcat');
+  if(ec.length){
+    const palette = ['#7c3aed','#ec4899','#06b6d4','#10b981','#f59e0b','#ef4444','#8b5cf6','#3b82f6','#84cc16','#14b8a6','#f97316','#a855f7','#6366f1','#64748b'];
+    _ovCharts['ov-chart-expcat'] = new Chart(document.getElementById('ov-chart-expcat').getContext('2d'),{
+      type:'doughnut',
+      data:{labels:ec.map(e=>e.label),datasets:[{data:ec.map(e=>e.amount),backgroundColor:palette,borderWidth:2,borderColor:'#fff'}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'right',labels:{usePointStyle:true,padding:8,font:{size:10}}},tooltip:{callbacks:{label:c=>c.label+': '+Math.round(c.raw).toLocaleString('fr-FR')+' TND'}}}}
+    });
+  }else{
+    document.getElementById('ov-chart-expcat').getContext('2d').clearRect(0,0,9999,9999);
+  }
+
+  // ── Chart 4: Currency distribution
+  const cu = d.currency_dist || {};
+  _ovDestroy('ov-chart-currency');
+  if(Object.keys(cu).length){
+    _ovCharts['ov-chart-currency'] = new Chart(document.getElementById('ov-chart-currency').getContext('2d'),{
+      type:'pie',
+      data:{labels:Object.keys(cu),datasets:[{data:Object.values(cu),backgroundColor:['#0f1628','#D61E8B','#3b82f6','#10b981','#7c3aed','#f59e0b'],borderWidth:2,borderColor:'#fff'}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{usePointStyle:true,padding:8,font:{size:11}}}}}
+    });
+  }
+
+  // ── Top clients
+  const tcArr = ov.top_clients || [];
+  document.getElementById('ov-top-clients').innerHTML = tcArr.length
+    ? `<div class="ov-mini-list">${tcArr.map(c=>`<div class="row"><span style="font-weight:600;">${escHtml(c.name)}</span><span style="font-weight:800;font-variant-numeric:tabular-nums;">${Math.round(c.amount).toLocaleString('fr-FR')} TND</span></div>`).join('')}</div>`
+    : '<div style="color:var(--muted);font-size:11px;padding:10px;text-align:center;">Aucun client facture cette annee.</div>';
+
+  // ── Top suppliers
+  const tsArr = ov.top_suppliers || [];
+  document.getElementById('ov-top-suppliers').innerHTML = tsArr.length
+    ? `<div class="ov-mini-list">${tsArr.map(s=>`<div class="row"><span style="font-weight:600;">${escHtml(s.name)}</span><span style="font-weight:800;font-variant-numeric:tabular-nums;">${Math.round(s.amount).toLocaleString('fr-FR')} TND</span></div>`).join('')}</div>`
+    : '<div style="color:var(--muted);font-size:11px;padding:10px;text-align:center;">Aucun fournisseur enregistre.</div>';
+
+  // ── Risk alerts panel
+  const alerts = ov.risk_alerts || [];
+  if(alerts.length){
+    document.getElementById('ov-risk-card').style.display='block';
+    document.getElementById('ov-risk-list').innerHTML = alerts.map(a=>`
+      <div class="ov-alert ${a.severity}">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <strong>${escHtml(a.title)}</strong>
+        </div>
+        <div style="font-size:11px;margin-top:4px;">${escHtml(a.detail)}</div>
+      </div>
+    `).join('');
+  }else{
+    document.getElementById('ov-risk-card').style.display='none';
+  }
+}
 
 /* ── Invoice Upload ──────────────────────────────────────── */
 (function initUpload(){
