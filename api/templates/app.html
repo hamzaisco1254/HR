@@ -1963,15 +1963,21 @@ select{cursor:pointer;appearance:none;
     <!-- populated by JS -->
   </div>
 
-  <!-- Charts: 6 panels in 2-col grid -->
+  <!-- Charts: 6 panels in 2-col grid. Canvases are wrapped in fixed-height
+       divs so Chart.js (which has maintainAspectRatio:false) doesn't stretch
+       them to crazy proportions on wide screens. -->
   <div class="ov-chart-grid" style="margin-bottom:16px;">
     <div class="chart-box">
       <h4>Revenus vs Depenses (mensuel)</h4>
-      <canvas id="ov-chart-revexp" height="220"></canvas>
+      <div style="position:relative;height:260px;margin-top:8px;">
+        <canvas id="ov-chart-revexp"></canvas>
+      </div>
     </div>
     <div class="chart-box">
       <h4>Cash flow projete — 3 prochains mois</h4>
-      <canvas id="ov-chart-forecast" height="220"></canvas>
+      <div style="position:relative;height:260px;margin-top:8px;">
+        <canvas id="ov-chart-forecast"></canvas>
+      </div>
       <p id="ov-forecast-note" style="font-size:10px;color:var(--muted);margin:8px 0 0;"></p>
     </div>
   </div>
@@ -1979,11 +1985,15 @@ select{cursor:pointer;appearance:none;
   <div class="ov-chart-grid" style="margin-bottom:16px;">
     <div class="chart-box">
       <h4>Depenses par categorie</h4>
-      <canvas id="ov-chart-expcat" height="220"></canvas>
+      <div style="position:relative;height:240px;margin-top:8px;">
+        <canvas id="ov-chart-expcat"></canvas>
+      </div>
     </div>
     <div class="chart-box">
       <h4>Devises (factures fournisseurs)</h4>
-      <canvas id="ov-chart-currency" height="220"></canvas>
+      <div style="position:relative;height:240px;margin-top:8px;">
+        <canvas id="ov-chart-currency"></canvas>
+      </div>
     </div>
   </div>
 
