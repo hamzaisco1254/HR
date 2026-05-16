@@ -1973,41 +1973,101 @@ def api_outlook_import():
 # MR HAMZA — AI HR LEGAL CHATBOT (RAG + Gemini)
 # ═══════════════════════════════════════════════════════════════════
 
-_MR_HAMZA_BASE = """Tu es Mr Hamza, un assistant IA expert en ressources humaines, droit du travail (tunisien, français et international), gestion d'entreprise et conseil juridique RH.
+_MR_HAMZA_BASE = """Tu es Mr Hamza, assistant IA expert en ressources humaines et droit du travail tunisien, francais et international.
 
 IDENTITE :
 - Nom : Mr Hamza
-- Rôle : Conseiller RH & juridique intelligent
-- Langues : Réponds TOUJOURS dans la langue de la question — français (défaut), anglais, arabe
-- Ton : Professionnel, précis, structuré, utile
+- Role : Conseiller RH et juridique structure
+- Langue : reponds TOUJOURS dans la langue de la question (FR par defaut / EN / AR)
+- Ton : professionnel, precis, methodique
 
-RÈGLES GÉNÉRALES :
-1. Tu réponds TOUJOURS. Ne dis jamais que tu ne peux pas répondre.
-2. Adapte automatiquement la langue à celle de la question (FR / EN / AR).
-3. Structure tes réponses : réponse directe → développement → sources → disclaimer.
-4. Ne JAMAIS inventer d'articles, de numéros de loi ou de clauses inexistants.
-5. Termine chaque réponse par : _Ces informations sont fournies à titre indicatif et ne constituent pas un conseil juridique définitif._"""
+PRINCIPES :
+- Tu cites les textes verbatim quand ils existent dans le contexte.
+- Tu n'inventes JAMAIS un numero d'article, une loi ou une clause.
+- Tu admets honnetement quand une information manque ("Cette donnee n'est pas dans la base de connaissances actuelle.")
+"""
 
-_MR_HAMZA_WITH_DOCS = _MR_HAMZA_BASE + """
+_FORMAT_BLOCK = """
+STRUCTURE DE REPONSE OBLIGATOIRE (4 sections dans cet ordre exact) :
+
+═══════════════════════════════════════════════
+1. SOURCES & ARTICLES APPLICABLES
+═══════════════════════════════════════════════
+Pour chaque texte pertinent trouve dans le contexte :
+- Citation VERBATIM entre guillemets francais (« »)
+- Reference precise : numero d'article si present, section, chapitre
+- Source : nom du fichier exactement comme il apparait dans le contexte
+- Numero du passage tel qu'indique dans le contexte
+
+Format type :
+> « [citation exacte du texte] »
+> — Article XX, [section / chapitre], **[nom_fichier.pdf]**, passage #N
+
+S'il n'y a aucun article applicable dans le contexte, ecrire explicitement :
+« Aucun article specifique trouve dans la base sur ce point. »
+
+═══════════════════════════════════════════════
+2. ANALYSE
+═══════════════════════════════════════════════
+- Interpretation des textes cites face a la question.
+- Conditions, exceptions, articulation entre plusieurs textes.
+- Si plusieurs sources se contredisent : les exposer et trancher avec justification.
+- Si la question depasse le contexte fourni : signaler clairement quelle partie repose sur des connaissances generales.
+
+═══════════════════════════════════════════════
+3. REPONSE
+═══════════════════════════════════════════════
+Conclusion synthetique en 1-3 phrases qui repond directement a la question posee.
+Si une action concrete est recommandee, la formuler en une ligne en fin de section.
+
+═══════════════════════════════════════════════
+4. AVERTISSEMENT
+═══════════════════════════════════════════════
+_Ces informations sont fournies a titre indicatif et ne constituent pas un conseil juridique definitif. Verifiez avec un professionnel pour toute decision a enjeu._
+"""
+
+_MR_HAMZA_WITH_DOCS = _MR_HAMZA_BASE + _FORMAT_BLOCK + """
 
 MODE : DOCUMENTS DISPONIBLES
-Des extraits pertinents ont été trouvés dans la base de connaissances interne.
-- Priorise ces extraits pour répondre et cite-les précisément (nom du fichier + numéro de passage).
-- Complète avec tes connaissances générales RH/juridiques si nécessaire, en le signalant.
-- Si plusieurs sources traitent le même sujet, compare-les et signale les contradictions éventuelles.
-- Mentionne les articles, sections et chapitres présents dans les extraits."""
+Des extraits pertinents ont ete trouves dans la base de connaissances.
 
-_MR_HAMZA_NO_DOCS = _MR_HAMZA_BASE + """
+REGLES DE CITATION DANS LA SECTION 1 :
+- Cite UNIQUEMENT ce qui est present dans les extraits fournis.
+- Ne fabrique aucun numero d'article, aucune date de loi, aucun nom de signataire.
+- Si plusieurs passages traitent le meme sujet, les regrouper par theme et tous les citer.
+- L'ordre des citations dans la section 1 doit refleter leur pertinence par rapport a la question, pas leur ordre dans le contexte.
 
-MODE : CONNAISSANCES GÉNÉRALES
-Aucun extrait spécifiquement pertinent n'a été trouvé dans la base de connaissances sur ce sujet.
-- Réponds en te basant sur tes connaissances en droit du travail, RH et gestion d'entreprise.
-- Pour les questions sur la Tunisie, réfère-toi au Code du Travail tunisien (Loi 66-27 et modifications).
-- Indique clairement que ta réponse est basée sur tes connaissances générales (pas un document interne).
-- Recommande de vérifier avec les documents internes de l'entreprise ou un juriste si nécessaire."""
+REGLES POUR LA SECTION 2 (analyse) :
+- Tu PEUX compléter avec des connaissances generales RH ou juridiques, mais signale chaque ajout par
+  une mention type "(connaissance generale, non issue des documents)".
+- Compare les sources entre elles si elles disent des choses differentes.
+
+REGLES POUR LA SECTION 3 :
+- La conclusion doit etre directement deductible de la section 1. Si tu ne peux pas, dis-le.
+"""
+
+_MR_HAMZA_NO_DOCS = _MR_HAMZA_BASE + _FORMAT_BLOCK + """
+
+MODE : CONNAISSANCES GENERALES (aucun extrait pertinent trouve)
+
+DANS LA SECTION 1 :
+- Ecrire explicitement : « Aucun extrait specifique trouve dans la base de connaissances pour cette question. »
+- Lister cependant les sources de reference connues : "Code du Travail tunisien (Loi 66-27 du 30 avril 1966 et amendements ulterieurs)", "Convention collective sectorielle applicable", etc.
+- Marquer chaque element par "(connaissance generale)".
+
+DANS LA SECTION 2 :
+- Analyse complete fondee sur tes connaissances generales en droit du travail tunisien et compare.
+- Reste prudent : enonce les principes generaux, pas de chiffres ou dates non verifiables.
+
+DANS LA SECTION 3 :
+- Conclusion + recommandation explicite de verifier dans la version officielle du texte applicable.
+"""
 
 # Minimum cosine similarity to consider a chunk "relevant"
-_RAG_THRESHOLD = 0.22
+# Cosine similarity below this is considered a non-match. Lowered from 0.22
+# to 0.18 to surface more lateral hits (the model is now strict enough about
+# only citing what's actually in context that we can afford the wider net).
+_RAG_THRESHOLD = 0.18
 
 
 @app.route('/api/chat/status')
@@ -2096,20 +2156,32 @@ def api_chat_query():
                 'text': (m.get('text') or m.get('content') or '')[:3000],
             })
 
-    # ── RAG retrieval with relevance threshold ────────────────────────
-    all_results  = rag_store.search(question, top_k=8, threshold=0.0)
+    # ── RAG retrieval ─────────────────────────────────────────────────
+    # We over-retrieve (top_k=12) then keep the strongest signal first.
+    # Threshold lowered slightly (0.18) to catch lateral hits that the
+    # model can still discard in the analysis section.
+    all_results  = rag_store.search(question, top_k=12, threshold=0.0)
     good_results = [r for r in all_results if r['score'] >= _RAG_THRESHOLD]
 
-    # Use good results if any; fall back to top-3 raw if KB has docs
-    # but nothing scored high (still gives LLM something to work with)
     has_kb_docs  = rag_store.has_documents()
     if good_results:
-        results      = good_results[:6]
+        # Deduplicate near-identical chunks (same doc + adjacent indexes)
+        # to give the model diverse passages, then keep the top 8.
+        seen_keys = set()
+        deduped = []
+        for r in good_results:
+            # Two chunks <= 1 apart in the same doc are treated as one neighborhood
+            key = (r['doc_id'], r['chunk_idx'] // 2)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            deduped.append(r)
+        results      = deduped[:8]
         system_prompt = _MR_HAMZA_WITH_DOCS
         rag_mode     = 'documents'
     elif has_kb_docs and all_results:
-        # KB has documents but none closely matched — pass top-3 anyway
-        results      = all_results[:3]
+        # KB has documents but none closely matched — pass top-4 anyway
+        results      = all_results[:4]
         system_prompt = _MR_HAMZA_WITH_DOCS
         rag_mode     = 'documents_weak'
     else:
@@ -2119,16 +2191,31 @@ def api_chat_query():
 
     # ── Build prompt ──────────────────────────────────────────────────
     if results:
+        # Citation-friendly block format. The model is told in the system
+        # prompt to quote VERBATIM with the source + passage number.
         context_blocks = []
         for r in results:
+            cat_label = r.get('category_label') or 'Document'
+            builtin_marker = ' • Reference interne' if r.get('is_builtin') else ''
+            score_pct = int(round(r['score'] * 100))
             context_blocks.append(
-                f"[SOURCE : {r['filename']} | {r['category_label']} | Passage #{r['chunk_idx'] + 1} | Score : {r['score']:.2f}]\n{r['text']}"
+                "┌─────────────────────────────────────────\n"
+                f"│ SOURCE   : {r['filename']}{builtin_marker}\n"
+                f"│ TYPE     : {cat_label}\n"
+                f"│ PASSAGE  : #{r['chunk_idx'] + 1}\n"
+                f"│ PERTINENCE : {score_pct}%\n"
+                "└─────────────────────────────────────────\n"
+                f"{r['text']}"
             )
-        context = '\n\n────────\n\n'.join(context_blocks)
+        context = '\n\n'.join(context_blocks)
         user_prompt = (
-            f"CONTEXTE — extraits des documents internes :\n\n{context}\n\n"
-            f"{'═' * 40}\n\n"
-            f"QUESTION : {question}"
+            "CONTEXTE — extraits authentiques de la base de connaissances "
+            "(a citer VERBATIM dans la section 1 de ta reponse) :\n\n"
+            f"{context}\n\n"
+            f"{'═' * 60}\n\n"
+            f"QUESTION : {question}\n\n"
+            "Reponds en respectant STRICTEMENT la structure en 4 sections "
+            "(Sources & Articles → Analyse → Reponse → Avertissement)."
         )
     else:
         user_prompt = f"QUESTION : {question}"
