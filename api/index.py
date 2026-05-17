@@ -41,7 +41,7 @@ from document_history import DocumentHistory
 from models import Employee, Company, DocumentConfig
 from financial_store import InvoiceStore, BalanceStore, PaymentStore, ExchangeRates
 from invoice_processor import process_invoice, generate_ai_insights
-from kpi_engine import compute_all_kpis, get_cashflow_timeseries, get_status_distribution
+from kpi_engine import compute_all_kpis, get_cashflow_timeseries, get_status_distribution, compute_kpi_dashboard
 from auth import UserStore, login_required, admin_required
 import email_service
 from trips_store import TripsStore, TRIP_DOCS, VISA_DOCS
@@ -892,6 +892,24 @@ def api_clear_history():
 # ═══════════════════════════════════════════════════════════════════
 # FINANCIAL DASHBOARD API (all protected)
 # ═══════════════════════════════════════════════════════════════════
+
+@app.route('/api/dashboard/kpi_dashboard')
+@login_required
+def api_dashboard_kpis_extended():
+    """Categorized KPI dashboard (PR-11) — supersedes the flat KPI grid."""
+    try:
+        result = compute_kpi_dashboard(
+            fx_rates, inv_store, bal_store, pay_store,
+            income_store=income_store,
+            planned_store=planned_store,
+            statements_engine=statements_engine,
+            forecast_engine=forecast_engine,
+        )
+        return jsonify(result)
+    except Exception as e:
+        logger.exception('kpi_dashboard_failed')
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/dashboard/data')
 @login_required

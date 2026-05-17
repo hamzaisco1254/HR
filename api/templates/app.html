@@ -2237,13 +2237,67 @@ select{cursor:pointer;appearance:none;
 </div>
 
 <!-- ═══════ KPIs ═══════ -->
+<style>
+.kpi-hero{background:linear-gradient(135deg,#0f1628 0%,#1e2a47 100%);color:#fff;border-radius:var(--radius);padding:24px 28px;margin-bottom:22px;display:flex;align-items:center;gap:22px;flex-wrap:wrap;}
+.kpi-hero .ring{position:relative;width:120px;height:120px;flex-shrink:0;}
+.kpi-hero .ring svg{transform:rotate(-90deg);}
+.kpi-hero .ring .score-text{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.kpi-hero .ring .score-text .num{font-size:32px;font-weight:900;line-height:1;}
+.kpi-hero .ring .score-text .lbl{font-size:9px;text-transform:uppercase;letter-spacing:2px;opacity:0.7;margin-top:3px;}
+.kpi-hero .meta{flex:1;min-width:240px;}
+.kpi-hero .meta h2{margin:0 0 4px;font-size:22px;font-weight:900;color:#fff;}
+.kpi-hero .meta p{margin:0;font-size:12px;opacity:0.75;line-height:1.5;}
+.kpi-hero .stats{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;}
+.kpi-hero .stats span{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;background:rgba(255,255,255,0.1);padding:5px 10px;border-radius:8px;}
+.kpi-hero .stats .pos{background:rgba(16,185,129,0.25);color:#a7f3d0;}
+.kpi-hero .stats .neu{background:rgba(156,163,175,0.25);color:#d1d5db;}
+.kpi-hero .stats .neg{background:rgba(239,68,68,0.25);color:#fecaca;}
+
+.kpi-category{margin-bottom:24px;}
+.kpi-cat-header{display:flex;align-items:center;gap:12px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--border-l);}
+.kpi-cat-header .icon{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--pink),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;}
+.kpi-cat-header h3{margin:0;font-size:15px;font-weight:800;color:var(--text);}
+.kpi-cat-header .count{margin-left:auto;font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);font-weight:700;background:var(--bg);padding:3px 10px;border-radius:8px;}
+
+.kpi-grid-rich{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;}
+.kpi-tile-rich{background:white;border:1px solid var(--border-l);border-radius:var(--radius);padding:14px 16px;position:relative;transition:all .15s;border-left:4px solid var(--border-l);}
+.kpi-tile-rich:hover{border-color:var(--pink);box-shadow:var(--shadow-sm);}
+.kpi-tile-rich.positive{border-left-color:#10b981;}
+.kpi-tile-rich.negative{border-left-color:#ef4444;}
+.kpi-tile-rich.neutral{border-left-color:#9ca3af;}
+.kpi-tile-rich .name{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;}
+.kpi-tile-rich .value{font-size:22px;font-weight:900;margin-top:6px;font-variant-numeric:tabular-nums;}
+.kpi-tile-rich .value.positive{color:#065f46;}
+.kpi-tile-rich .value.negative{color:#991b1b;}
+.kpi-tile-rich .value.neutral{color:var(--text);}
+.kpi-tile-rich .desc{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4;}
+.kpi-tile-rich .bench{display:inline-block;background:var(--bg);font-size:9px;font-weight:700;color:var(--muted);padding:2px 7px;border-radius:6px;margin-top:6px;letter-spacing:.3px;}
+.kpi-tile-rich .trend-arrow{position:absolute;top:14px;right:14px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;}
+.kpi-tile-rich .trend-arrow svg{width:16px;height:16px;}
+.kpi-tile-rich.positive .trend-arrow{color:#10b981;}
+.kpi-tile-rich.negative .trend-arrow{color:#ef4444;}
+.kpi-tile-rich.neutral .trend-arrow{color:#9ca3af;}
+</style>
+
 <div class="page" id="pg-kpis">
-  <div class="page-header"><h2>KPIs Financiers</h2><p>Indicateurs cles de performance en temps reel</p></div>
-  <div class="card">
-    <h3><span class="card-icon purple"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span> Top 10 Indicateurs</h3>
-    <p style="font-size:12px;color:var(--text-sec);margin-bottom:18px;">Normalises en TND pour comparaison.</p>
-    <div class="kpi-grid" id="kpi-grid"></div>
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div>
+      <h2>KPIs Financiers</h2>
+      <p>Indicateurs clés de performance — annee <span id="kpi-year">—</span></p>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="loadKPIs()" title="Actualiser">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      Actualiser
+    </button>
   </div>
+
+  <!-- Health score hero -->
+  <div class="kpi-hero" id="kpi-hero">
+    <!-- populated by JS -->
+  </div>
+
+  <!-- 6 category sections -->
+  <div id="kpi-categories"></div>
 </div>
 
 <!-- ═══════ SETTINGS ═══════ -->
@@ -2791,7 +2845,89 @@ function addAccount(){const n=document.getElementById('new-acc-name').value.trim
 function deleteAccount(id){if(!confirm('Supprimer?'))return;post('/api/finance/delete_account',{id}).then(()=>{toast('Supprime','success');loadBalances();});}
 
 /* ── KPIs ────────────────────────────────────────────────── */
-function loadKPIs(){api('/api/dashboard/data').then(d=>{const g=document.getElementById('kpi-grid');if(!d.kpis?.length){g.innerHTML='<p style="color:var(--muted);padding:16px 0;">Pas assez de donnees.</p>';return;}g.innerHTML=d.kpis.map(k=>`<div class="kpi-card"><div class="kpi-name">${k.name}</div><div class="kpi-val ${k.trend==='positive'?'positive':k.trend==='negative'?'negative':'neutral'}">${k.formatted}</div><div class="kpi-desc">${k.description}</div></div>`).join('');});}
+/* SVG icon registry for category headers */
+const KPI_CAT_ICONS = {
+  wallet:     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12V7H5a2 2 0 010-4h14v4"/><path d="M3 5v14a2 2 0 002 2h16v-5"/><path d="M18 12a2 2 0 000 4h4v-4z"/></svg>',
+  'trending-up':'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
+  percent:    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
+  truck:      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>',
+  users:      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>',
+  alert:      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+};
+const KPI_TREND_ICONS = {
+  positive: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="6 9 12 15 18 9" transform="rotate(180 12 12)"/></svg>',
+  negative: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>',
+  neutral:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+};
+
+async function loadKPIs(){
+  let d;
+  try{ d = await api('/api/dashboard/kpi_dashboard'); }
+  catch(e){ toast('Erreur KPIs: '+e,'error'); return; }
+  if(d.error){toast(d.error,'error');return;}
+
+  document.getElementById('kpi-year').textContent = d.year || '—';
+
+  // ── Hero: health score ring + summary
+  const score = d.health_score || 0;
+  const cats = d.categories || [];
+  let posCount=0, neuCount=0, negCount=0;
+  cats.forEach(c=>(c.kpis||[]).forEach(k=>{
+    if(k.trend==='positive') posCount++;
+    else if(k.trend==='negative') negCount++;
+    else neuCount++;
+  }));
+  const ringColor = score>=70 ? '#10b981' : (score>=40 ? '#f59e0b' : '#ef4444');
+  const circ = 2 * Math.PI * 52;
+  const dash = (score/100) * circ;
+  document.getElementById('kpi-hero').innerHTML = `
+    <div class="ring">
+      <svg width="120" height="120" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="10"/>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="${ringColor}" stroke-width="10" stroke-linecap="round"
+                stroke-dasharray="${dash} ${circ}"/>
+      </svg>
+      <div class="score-text">
+        <span class="num">${score}</span>
+        <span class="lbl">Health score</span>
+      </div>
+    </div>
+    <div class="meta">
+      <h2>Tableau de bord financier</h2>
+      <p>${d.kpi_count} indicateurs analysés à travers ${cats.length} catégories. Le score global agrège la tendance de chaque KPI (vert = bon, ambre = neutre, rouge = à surveiller).</p>
+      <div class="stats">
+        <span class="pos">▲ ${posCount} positifs</span>
+        <span class="neu">— ${neuCount} neutres</span>
+        <span class="neg">▼ ${negCount} à surveiller</span>
+      </div>
+    </div>`;
+
+  // ── Categories
+  const container = document.getElementById('kpi-categories');
+  container.innerHTML = cats.map(cat=>{
+    const icon = KPI_CAT_ICONS[cat.icon] || KPI_CAT_ICONS.percent;
+    const tiles = (cat.kpis||[]).map(k=>{
+      const trend = k.trend || 'neutral';
+      const arrow = KPI_TREND_ICONS[trend] || KPI_TREND_ICONS.neutral;
+      const bench = k.benchmark ? `<div class="bench">Cible : ${escHtml(k.benchmark)}</div>` : '';
+      return `<div class="kpi-tile-rich ${trend}" title="${escHtml(k.description||'')}">
+        <div class="trend-arrow">${arrow}</div>
+        <div class="name">${escHtml(k.name)}</div>
+        <div class="value ${trend}">${escHtml(k.formatted)}</div>
+        <div class="desc">${escHtml(k.description||'')}</div>
+        ${bench}
+      </div>`;
+    }).join('');
+    return `<div class="kpi-category">
+      <div class="kpi-cat-header">
+        <div class="icon">${icon}</div>
+        <h3>${escHtml(cat.name)}</h3>
+        <span class="count">${(cat.kpis||[]).length} indicateurs</span>
+      </div>
+      <div class="kpi-grid-rich">${tiles}</div>
+    </div>`;
+  }).join('');
+}
 function saveRates(){post('/api/finance/exchange_rate',{eur_to_tnd:parseFloat(document.getElementById('rate-eur-tnd').value)||3.35,tnd_to_eur:parseFloat(document.getElementById('rate-tnd-eur').value)||0.2985}).then(()=>toast('Taux sauvegardes','success'));}
 
 /* ── Admin: Users ────────────────────────────────────────── */
