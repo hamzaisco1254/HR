@@ -19,30 +19,94 @@ import db
 class InvoiceStore:
     """CRUD for invoices in Postgres."""
 
-    def add_invoice(self, data: Dict) -> Dict:
+    def add_invoice(self, data: Dict, fx_rates=None) -> Dict:
+        """Create a vendor invoice with VAT + TND stability.
+
+        New behavior (PR-12):
+          - Computes amount_ht / vat_amount from amount (TTC) + vat_rate when
+            amount_ht is not explicitly provided. Conversely, if amount_ht
+            and vat_rate are given, amount (TTC) is computed from them.
+          - Stores amount_tnd + fx_rate at create time, so the historical
+            P&L is stable when the exchange rate evolves later.
+          - Accepts vendor_id (FK to vendors table); falls back to a vendor
+            looked up by supplier_name if the id is not provided.
+        """
         inv_id = str(uuid.uuid4())
         now = datetime.utcnow()
+        currency = (data.get('currency') or 'TND').strip().upper()
+
+        # ── Amount + VAT calculation ──────────────────────────────
         try:
-            amount = float(data.get('amount', 0))
-        except (ValueError, TypeError):
-            amount = 0.0
+            vat_rate = float(data.get('vat_rate') if data.get('vat_rate') is not None else 19.0)
+        except (TypeError, ValueError):
+            vat_rate = 19.0
+        if vat_rate < 0: vat_rate = 0.0
+
+        def _f(v):
+            try: return float(v or 0)
+            except (TypeError, ValueError): return 0.0
+        amount_ht  = _f(data.get('amount_ht'))
+        amount_ttc = _f(data.get('amount'))
+        vat_amount = _f(data.get('vat_amount'))
+
+        if amount_ht > 0 and amount_ttc == 0:
+            # Derive TTC from HT
+            vat_amount = round(amount_ht * vat_rate / 100.0, 2)
+            amount_ttc = round(amount_ht + vat_amount, 2)
+        elif amount_ttc > 0 and amount_ht == 0:
+            # Derive HT from TTC (standard for OCR-extracted TTC totals)
+            if vat_rate > 0:
+                amount_ht  = round(amount_ttc / (1 + vat_rate / 100.0), 2)
+                vat_amount = round(amount_ttc - amount_ht, 2)
+            else:
+                amount_ht  = amount_ttc
+                vat_amount = 0.0
+        elif amount_ht == 0 and amount_ttc == 0:
+            amount_ht = amount_ttc = vat_amount = 0.0
+
+        # ── TND conversion (store rate at create time for stability) ─
+        fx_rate = None
+        amount_tnd = amount_ttc
+        if currency != 'TND' and fx_rates:
+            r = fx_rates.get_rate(currency, 'TND')
+            if r and r > 0:
+                fx_rate = float(r)
+                amount_tnd = round(amount_ttc * fx_rate, 2)
+
+        # ── Vendor resolution (FK) ────────────────────────────────
+        vendor_id = (data.get('vendor_id') or '').strip() or None
+        supplier_name = (data.get('supplier_name') or '').strip()
+        if not vendor_id and supplier_name:
+            row = db.one("SELECT id FROM vendors WHERE LOWER(name) = LOWER(%s)", (supplier_name,))
+            if row:
+                vendor_id = row['id']
+
         category = (data.get('category') or '').strip().lower() or None
+
         db.execute(
-            """INSERT INTO invoices (id, supplier_name, invoice_ref, invoice_date,
-               due_date, amount, currency, payment_status, notes, category,
-               created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            """INSERT INTO invoices (
+                 id, supplier_name, invoice_ref, invoice_date, due_date,
+                 amount, currency, payment_status, notes, category,
+                 vendor_id, amount_ht, vat_rate, vat_amount, amount_tnd, fx_rate,
+                 paid_at, payment_method,
+                 created_at, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                       %s, %s, %s, %s, %s, %s,
+                       %s, %s, %s, %s)""",
             (
                 inv_id,
-                data.get('supplier_name', ''),
+                supplier_name,
                 data.get('invoice_ref', ''),
-                data.get('invoice_date') or None,   # '' → NULL for DATE
-                data.get('due_date') or None,        # '' → NULL for DATE
-                amount,
-                data.get('currency', 'TND'),
+                data.get('invoice_date') or None,
+                data.get('due_date') or None,
+                amount_ttc,
+                currency,
                 data.get('payment_status', 'unpaid'),
                 data.get('notes', ''),
                 category,
+                vendor_id, amount_ht, vat_rate, vat_amount, amount_tnd, fx_rate,
+                data.get('paid_at') or None,
+                (data.get('payment_method') or '').strip().lower() or None,
                 now, now,
             ),
         )
@@ -74,26 +138,49 @@ class InvoiceStore:
         row = db.one("SELECT * FROM invoices WHERE id = %s", (invoice_id,))
         return self._row(row) if row else None
 
-    def update_invoice(self, invoice_id: str, updates: Dict) -> Optional[Dict]:
+    def update_invoice(self, invoice_id: str, updates: Dict, fx_rates=None) -> Optional[Dict]:
+        current = self.get_by_id(invoice_id)
+        if not current:
+            return None
         allowed = ('supplier_name', 'invoice_ref', 'invoice_date', 'due_date',
-                    'amount', 'currency', 'payment_status', 'notes', 'category')
-        # Fields that are DATE type in Postgres — empty string must become NULL
-        date_fields = ('invoice_date', 'due_date')
-        sets = []
-        params = []
+                   'amount', 'currency', 'payment_status', 'notes', 'category',
+                   'vendor_id', 'amount_ht', 'vat_rate', 'vat_amount',
+                   'paid_at', 'payment_method')
+        date_fields = ('invoice_date', 'due_date', 'paid_at')
+        money_fields = ('amount', 'amount_ht', 'vat_amount', 'vat_rate')
+        text_norm_fields = ('category', 'payment_method')
+        sets, params = [], []
         for k, v in updates.items():
-            if k in allowed:
-                if k in date_fields:
-                    v = v if v else None  # '' → NULL for DATE columns
-                if k == 'amount':
-                    try: v = float(v)
-                    except (ValueError, TypeError): v = 0.0
-                if k == 'category':
-                    v = (v or '').strip().lower() or None  # normalize + '' → NULL
-                sets.append(f"{k} = %s")
-                params.append(v)
+            if k not in allowed:
+                continue
+            if k in date_fields:
+                v = v if v else None
+            elif k in money_fields:
+                try: v = float(v) if v not in (None, '') else None
+                except (ValueError, TypeError): v = 0.0
+            elif k in text_norm_fields:
+                v = (v or '').strip().lower() or None
+            elif k == 'vendor_id':
+                v = v or None
+            sets.append(f"{k} = %s")
+            params.append(v)
+
+        # Recompute amount_tnd if amount/currency/vat changed
+        ttc_changed = 'amount' in updates or 'currency' in updates or 'vat_rate' in updates or 'amount_ht' in updates
+        if ttc_changed:
+            new_amt = float(updates.get('amount', current.get('amount', 0)) or 0)
+            new_cur = (updates.get('currency') or current.get('currency') or 'TND').upper()
+            if new_cur != 'TND' and fx_rates:
+                r = fx_rates.get_rate(new_cur, 'TND')
+                if r and r > 0:
+                    sets.append("fx_rate = %s"); params.append(float(r))
+                    sets.append("amount_tnd = %s"); params.append(round(new_amt * float(r), 2))
+            else:
+                sets.append("fx_rate = %s"); params.append(None)
+                sets.append("amount_tnd = %s"); params.append(new_amt)
+
         if not sets:
-            return self.get_by_id(invoice_id)
+            return current
         sets.append("updated_at = %s"); params.append(datetime.utcnow())
         params.append(invoice_id)
         db.execute(f"UPDATE invoices SET {', '.join(sets)} WHERE id = %s", tuple(params))
@@ -151,6 +238,14 @@ class InvoiceStore:
             'payment_status':  r.get('payment_status', 'unpaid'),
             'notes':           r.get('notes', ''),
             'category':        r.get('category') or '',
+            'vendor_id':       r.get('vendor_id'),
+            'amount_ht':       float(r['amount_ht']) if r.get('amount_ht') is not None else None,
+            'vat_rate':        float(r.get('vat_rate') or 0),
+            'vat_amount':      float(r['vat_amount']) if r.get('vat_amount') is not None else None,
+            'amount_tnd':      float(r['amount_tnd']) if r.get('amount_tnd') is not None else None,
+            'fx_rate':         float(r['fx_rate']) if r.get('fx_rate') is not None else None,
+            'paid_at':         _dt(r.get('paid_at')),
+            'payment_method':  r.get('payment_method') or '',
             'created_at':      _dt(r.get('created_at')),
             'updated_at':      _dt(r.get('updated_at')),
         }

@@ -155,7 +155,20 @@ def compute_pnl(fx_rates, year: int, month: Optional[int] = None, basis: str = '
     if basis == 'cash':
         revenue = sum(float(r.get('received_tnd') or 0) for r in rev_rows)
     else:
-        revenue = sum(float(r.get('amount_tnd') or 0) for r in rev_rows)
+        # Accrual basis — revenue is reported EX-VAT (amount_ht).
+        # Falls back to amount_tnd if amount_ht hasn't been computed yet
+        # (legacy rows before PR-12).
+        def _row_revenue(r):
+            ht = r.get('amount_ht')
+            if ht is not None:
+                # If currency is not TND, convert HT proportionally via the stored rate
+                rate = r.get('fx_rate')
+                if rate and float(rate) > 0:
+                    return float(ht) * float(rate)
+                return float(ht)
+            # Legacy fallback
+            return float(r.get('amount_tnd') or 0)
+        revenue = sum(_row_revenue(r) for r in rev_rows)
 
     exp_rows = _expense_rows(year, month)
     months_covered = _months_in_period(year, month)
@@ -168,7 +181,23 @@ def compute_pnl(fx_rates, year: int, month: Optional[int] = None, basis: str = '
     for inv in exp_rows:
         cat    = (inv.get('category') or '').lower()
         bucket = _CATEGORY_BUCKETS.get(cat, 'charges_externes')
-        amt    = _norm(inv.get('amount'), fx_rates, inv.get('currency') or 'TND')
+        # Use HT amount_ht when available (PR-12), else fall back to stored
+        # amount_tnd, else convert at current rate. This ensures expenses
+        # are reported EX-VAT consistent with revenue.
+        ht = inv.get('amount_ht')
+        if ht is not None and float(ht or 0) > 0:
+            # Convert HT to TND using stored fx_rate (if any) else live rate
+            rate = inv.get('fx_rate')
+            if rate and float(rate) > 0:
+                amt = float(ht) * float(rate)
+            elif (inv.get('currency') or 'TND').upper() == 'TND':
+                amt = float(ht)
+            else:
+                amt = _norm(ht, fx_rates, inv.get('currency') or 'TND')
+        elif inv.get('amount_tnd') is not None:
+            amt = float(inv['amount_tnd'])
+        else:
+            amt = _norm(inv.get('amount'), fx_rates, inv.get('currency') or 'TND')
         buckets[bucket]['amount'] += amt
         buckets[bucket]['items'].append({
             'category': cat or 'autre',

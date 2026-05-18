@@ -91,6 +91,9 @@ def _row(r: Optional[dict]) -> Optional[dict]:
         'fx_rate':       float(r['fx_rate']) if r.get('fx_rate') is not None else None,
         'amount_tnd':    float(r['amount_tnd']) if r.get('amount_tnd') is not None else None,
         'received_tnd':  float(r['received_tnd']) if r.get('received_tnd') is not None else None,
+        'amount_ht':     float(r['amount_ht']) if r.get('amount_ht') is not None else None,
+        'vat_rate':      float(r.get('vat_rate') or 0),
+        'vat_amount':    float(r['vat_amount']) if r.get('vat_amount') is not None else None,
         'status':        r.get('status') or 'draft',
         'sent_at':       _dt(r.get('sent_at')),
         'paid_at':       _dt(r.get('paid_at')),
@@ -99,6 +102,63 @@ def _row(r: Optional[dict]) -> Optional[dict]:
         'created_at':    _dt(r.get('created_at')),
         'updated_at':    _dt(r.get('updated_at')),
     }
+
+
+def _compute_vat_fields(amount: float, vat_rate: float, amount_ht_in=None) -> tuple:
+    """Given a TTC amount + rate, return (amount_ht, vat_amount).
+    If amount_ht_in is provided (non-None), it takes precedence and the
+    amount (TTC) is back-computed.
+    """
+    try: rate = float(vat_rate or 0)
+    except (TypeError, ValueError): rate = 0.0
+    if rate < 0: rate = 0.0
+
+    if amount_ht_in not in (None, '', 0):
+        try: ht = float(amount_ht_in)
+        except (TypeError, ValueError): ht = 0.0
+        vat = round(ht * rate / 100.0, 2)
+        ttc = round(ht + vat, 2)
+        return (round(ht, 2), vat, ttc)
+
+    try: ttc = float(amount or 0)
+    except (TypeError, ValueError): ttc = 0.0
+    if rate > 0:
+        ht = round(ttc / (1 + rate / 100.0), 2)
+        vat = round(ttc - ht, 2)
+    else:
+        ht = round(ttc, 2)
+        vat = 0.0
+    return (ht, vat, round(ttc, 2))
+
+
+def next_customer_invoice_ref(year: Optional[int] = None) -> str:
+    """Generate the next sequential customer invoice reference for the year.
+
+    Format: FA-YYYY-NNNN (4-digit zero-padded counter, restart each year).
+    Uses kv_settings key 'customer_invoice_seq' with structure:
+        {"<YYYY>": last_counter}
+    Atomic via UPDATE ... RETURNING.
+    """
+    import json
+    if year is None:
+        year = datetime.utcnow().year
+    KEY = 'customer_invoice_seq'
+    row = db.one("SELECT value FROM kv_settings WHERE key = %s", (KEY,))
+    if row and isinstance(row.get('value'), dict):
+        state = row['value']
+    else:
+        state = {}
+    last = int(state.get(str(year)) or 0)
+    next_n = last + 1
+    state[str(year)] = next_n
+    db.execute(
+        """INSERT INTO kv_settings (key, value, updated_at)
+           VALUES (%s, %s::jsonb, %s)
+           ON CONFLICT (key) DO UPDATE
+             SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at""",
+        (KEY, json.dumps(state), datetime.utcnow()),
+    )
+    return f"FA-{year}-{next_n:04d}"
 
 
 class IncomeStore:
@@ -206,6 +266,29 @@ class IncomeStore:
             dup = db.one("SELECT id FROM customer_invoices WHERE invoice_ref = %s", (invoice_ref,))
             if dup:
                 raise ValueError(f"Une facture avec la reference '{invoice_ref}' existe deja.")
+        else:
+            # Auto-generate sequential ref (FA-YYYY-NNNN)
+            try:
+                year_from_period = int(str(period_month)[:4]) if period_month else None
+            except (TypeError, ValueError):
+                year_from_period = None
+            invoice_ref = next_customer_invoice_ref(year=year_from_period)
+
+        # VAT computation: if amount_ht given, derive TTC; else derive HT from TTC
+        vat_rate_in = data.get('vat_rate')
+        if vat_rate_in is None:
+            # Default: 0% for non-TN clients (export), 19% for TN
+            client_country = db.one("SELECT country FROM clients WHERE id = %s", (client_id,))
+            cc = (client_country or {}).get('country', 'TN').upper()
+            vat_rate_in = 0.0 if cc != 'TN' else 19.0
+        amount_ht, vat_amount, amount_ttc = _compute_vat_fields(
+            amount, vat_rate_in,
+            amount_ht_in=data.get('amount_ht'),
+        )
+        # If TTC was back-computed, override the previously-set amount/amount_tnd
+        if amount_ttc != amount:
+            amount = amount_ttc
+            fx_rate, amount_tnd = self._compute_tnd(amount, currency, fx_override)
 
         iid = _new_id()
         db.execute(
@@ -213,12 +296,14 @@ class IncomeStore:
                  id, invoice_ref, client_id, project_id, department_id,
                  period_month, effort_days, issue_date, due_date,
                  amount, currency, fx_rate, amount_tnd, received_tnd,
+                 amount_ht, vat_rate, vat_amount,
                  status, sent_at, paid_at, notes, pdf_filename,
                  created_by, created_at, updated_at)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                       %s, %s, %s,
                        %s, %s, %s, %s, %s, %s, %s, %s)""",
             (iid,
-             invoice_ref or None,
+             invoice_ref,
              client_id,
              data.get('project_id') or None,
              data.get('department_id') or None,
@@ -231,6 +316,7 @@ class IncomeStore:
              fx_rate,
              amount_tnd,
              _decimal(data.get('received_tnd')),
+             amount_ht, float(vat_rate_in), vat_amount,
              _norm_status(data.get('status', 'draft')),
              _date(data.get('sent_at')),
              _date(data.get('paid_at')),
@@ -303,6 +389,24 @@ class IncomeStore:
             fx_rate, amount_tnd = self._compute_tnd(amt, cur, override)
             sets.append("fx_rate = %s");    params.append(fx_rate)
             sets.append("amount_tnd = %s"); params.append(amount_tnd)
+
+        # ── VAT recomputation if amount/vat_rate/amount_ht changed ─
+        vat_changed = 'vat_rate' in patch
+        amount_ht_in = patch.get('amount_ht')
+        if amount_changed or vat_changed or amount_ht_in is not None:
+            new_amt = float(patch['amount']) if amount_changed else float(current.get('amount') or 0)
+            new_rate = float(patch['vat_rate']) if vat_changed else float(current.get('vat_rate') or 0)
+            new_ht, new_vat, new_ttc = _compute_vat_fields(new_amt, new_rate, amount_ht_in=amount_ht_in)
+            sets.append("amount_ht = %s");  params.append(new_ht)
+            sets.append("vat_rate = %s");   params.append(new_rate)
+            sets.append("vat_amount = %s"); params.append(new_vat)
+            # If TTC was derived from HT and differs from input, update amount + tnd
+            if amount_ht_in not in (None, '', 0) and new_ttc != new_amt:
+                sets.append("amount = %s"); params.append(new_ttc)
+                cur = _norm_currency(patch['currency']) if currency_changed else current.get('currency', 'EUR')
+                fx_rate, amount_tnd = self._compute_tnd(new_ttc, cur, None)
+                sets.append("fx_rate = %s");    params.append(fx_rate)
+                sets.append("amount_tnd = %s"); params.append(amount_tnd)
 
         if 'received_tnd' in patch:
             sets.append("received_tnd = %s"); params.append(_decimal(patch['received_tnd']))

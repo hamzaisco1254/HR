@@ -394,6 +394,78 @@ CREATE INDEX IF NOT EXISTS planned_exp_status_idx   ON planned_expenses (status)
 CREATE INDEX IF NOT EXISTS planned_exp_category_idx ON planned_expenses (category);
 CREATE INDEX IF NOT EXISTS planned_exp_dates_idx    ON planned_expenses (start_date, end_date, due_date);
 
+-- ════════════════════════════════════════════════════════════════
+-- PR-12: Accounting compliance upgrade
+-- VAT support, vendor normalization, multi-payment tracking,
+-- sequential customer invoice numbering.
+-- ════════════════════════════════════════════════════════════════
+
+-- ── Vendors (normalized suppliers) ─────────────────────────────
+CREATE TABLE IF NOT EXISTS vendors (
+    id                          TEXT PRIMARY KEY,
+    name                        TEXT NOT NULL,
+    legal_name                  TEXT,
+    tax_id                      TEXT,                              -- Matricule fiscal tunisien
+    vat_id                      TEXT,                              -- Numéro TVA / VAT ID
+    country                     TEXT NOT NULL DEFAULT 'TN',
+    email                       TEXT,
+    phone                       TEXT,
+    address                     TEXT,
+    default_payment_terms_days  INTEGER NOT NULL DEFAULT 30,
+    default_category            TEXT,                              -- invoice category code
+    notes                       TEXT,
+    active                      BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by                  TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS vendors_name_lower_idx ON vendors (LOWER(name));
+CREATE INDEX IF NOT EXISTS vendors_active_idx ON vendors (active);
+
+-- ── Extend invoices (vendor side) with VAT + TND + vendor_id ──
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS vendor_id      TEXT REFERENCES vendors(id) ON DELETE SET NULL;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_ht      NUMERIC(15, 2);  -- Hors taxes
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS vat_rate       NUMERIC(5, 2)  NOT NULL DEFAULT 19.00;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS vat_amount     NUMERIC(15, 2);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_tnd     NUMERIC(15, 2);  -- TTC en TND, stocké à la création
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS fx_rate        NUMERIC(15, 6);  -- Taux utilisé pour la conversion
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS paid_at        DATE;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_method TEXT;            -- virement|cheque|especes|carte
+CREATE INDEX IF NOT EXISTS invoices_vendor_idx ON invoices (vendor_id);
+
+-- ── Extend customer_invoices with VAT ─────────────────────────
+ALTER TABLE customer_invoices ADD COLUMN IF NOT EXISTS amount_ht  NUMERIC(15, 2);  -- HT (sans TVA)
+ALTER TABLE customer_invoices ADD COLUMN IF NOT EXISTS vat_rate   NUMERIC(5, 2)  NOT NULL DEFAULT 0;   -- 0 = export EU, 19 = local TN
+ALTER TABLE customer_invoices ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(15, 2);
+
+-- ── Invoice payments (multi-payment / partial payment support) ─
+-- Exactly one of invoice_id (vendor side) or customer_invoice_id
+-- (revenue side) is set per row. Sum of TND amounts derives the
+-- payment status of the parent invoice.
+CREATE TABLE IF NOT EXISTS invoice_payments (
+    id                  TEXT PRIMARY KEY,
+    invoice_id          TEXT REFERENCES invoices(id) ON DELETE CASCADE,
+    customer_invoice_id TEXT REFERENCES customer_invoices(id) ON DELETE CASCADE,
+    payment_date        DATE NOT NULL,
+    amount              NUMERIC(15, 2) NOT NULL,
+    currency            TEXT NOT NULL DEFAULT 'TND',
+    fx_rate             NUMERIC(15, 6),
+    amount_tnd          NUMERIC(15, 2) NOT NULL,
+    method              TEXT,                                     -- virement|cheque|especes|carte
+    reference           TEXT,                                     -- check number, transaction ID
+    account_id          TEXT REFERENCES balances(id) ON DELETE SET NULL,
+    notes               TEXT,
+    created_by          TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (
+        (invoice_id IS NOT NULL AND customer_invoice_id IS NULL)
+        OR (invoice_id IS NULL AND customer_invoice_id IS NOT NULL)
+    )
+);
+CREATE INDEX IF NOT EXISTS inv_pay_invoice_idx  ON invoice_payments (invoice_id);
+CREATE INDEX IF NOT EXISTS inv_pay_cust_idx     ON invoice_payments (customer_invoice_id);
+CREATE INDEX IF NOT EXISTS inv_pay_date_idx     ON invoice_payments (payment_date DESC);
+
 -- ── Project assignments (N:M employee <-> project) ─────────────
 CREATE TABLE IF NOT EXISTS project_assignments (
     id              TEXT PRIMARY KEY,

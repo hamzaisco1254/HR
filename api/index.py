@@ -55,6 +55,11 @@ import forecast_engine
 import finance_assistant
 import jd_generator
 import jd_pdf
+from vendor_store import VendorStore
+from invoice_payment_store import InvoicePaymentStore, auto_match_planned_expense
+import vat_engine
+import aged_engine
+import customer_invoice_pdf
 from rag_store import RagStore, CATEGORIES as RAG_CATEGORIES
 import outlook_agent
 from gemini_client import generate as gemini_generate, is_configured as gemini_configured
@@ -189,6 +194,8 @@ employee_store   = EmployeeStore()
 project_store    = ProjectStore()
 income_store     = IncomeStore(fx_rates=fx_rates)
 planned_store    = PlannedExpenseStore(fx_rates=fx_rates)
+vendor_store     = VendorStore()
+inv_payment_store = InvoicePaymentStore(fx_rates=fx_rates)
 
 # ---------------------------------------------------------------------------
 # Cloud URL normalizer (exact copy of desktop)
@@ -1201,10 +1208,19 @@ def api_invoice_upload():
 @login_required
 def api_invoice_create():
     data = request.get_json(force=True)
-    if not data.get('supplier_name'):
+    if not data.get('supplier_name') and not data.get('vendor_id'):
         return jsonify({'error': 'Fournisseur requis'}), 400
-    inv = inv_store.add_invoice(data)
-    return jsonify({'status': 'ok', 'invoice': inv})
+    inv = inv_store.add_invoice(data, fx_rates=fx_rates)
+    # Try to auto-materialize a matching planned expense
+    matched_planned_id = None
+    try:
+        matched_planned_id = auto_match_planned_expense(inv, fx_rates=fx_rates)
+    except Exception:
+        logger.exception('auto_match_planned_failed')
+    response = {'status': 'ok', 'invoice': inv}
+    if matched_planned_id:
+        response['matched_planned_expense_id'] = matched_planned_id
+    return jsonify(response)
 
 
 @app.route('/api/invoice/list')
@@ -2080,6 +2096,187 @@ def api_jd_pdf(jd_id: str):
         action='jd.pdf.download', actor_id=session.get('user_id', ''),
         actor_email=session.get('user_email', ''),
         entity_type='jd_draft', entity_id=jd_id,
+        ip=request.headers.get('X-Forwarded-For', request.remote_addr) or '', ok=True,
+    )
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=fname,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ACCOUNTING UPGRADE API (PR-12)
+# Vendors, VAT, aged buckets, invoice payments, planned auto-match,
+# customer invoice PDF.
+# ═══════════════════════════════════════════════════════════════════
+
+# ─── Vendors ──────────────────────────────────────────────────
+
+@app.route('/api/finance/vendors', methods=['GET'])
+@login_required
+def api_vendors_list():
+    include_inactive = request.args.get('include_inactive', '0') in ('1', 'true', 'yes')
+    return jsonify({'vendors': vendor_store.list(include_inactive=include_inactive)})
+
+
+@app.route('/api/finance/vendors', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='vendor.create', entity='vendor')
+def api_vendors_create():
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify({'status': 'ok', 'vendor': vendor_store.add(data, created_by=_current_user_id())})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/finance/vendors/update', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='vendor.update', entity='vendor', entity_arg='id')
+def api_vendors_update():
+    data = request.get_json(force=True) or {}
+    vid = (data.pop('id', '') or '').strip()
+    try:
+        r = vendor_store.update(vid, data)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    if r is None:
+        return jsonify({'error': 'Fournisseur introuvable'}), 404
+    return jsonify({'status': 'ok', 'vendor': r})
+
+
+@app.route('/api/finance/vendors/delete', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='vendor.delete', entity='vendor', entity_arg='id')
+def api_vendors_delete():
+    data = request.get_json(force=True) or {}
+    if not vendor_store.delete((data.get('id') or '').strip()):
+        return jsonify({'error': 'Fournisseur introuvable'}), 404
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/finance/vendors/backfill', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='vendor.backfill', entity='vendor')
+def api_vendors_backfill():
+    """One-shot migration: create vendors from distinct supplier_names and link invoices."""
+    result = vendor_store.backfill_from_invoices()
+    return jsonify({'status': 'ok', **result})
+
+
+# ─── VAT declaration ───────────────────────────────────────────
+
+@app.route('/api/finance/vat/year', methods=['GET'])
+@login_required
+def api_vat_year():
+    try:
+        year = int(request.args.get('year') or datetime.utcnow().year)
+    except (TypeError, ValueError):
+        year = datetime.utcnow().year
+    return jsonify(vat_engine.declaration_for_year(year))
+
+
+@app.route('/api/finance/vat/month', methods=['GET'])
+@login_required
+def api_vat_month():
+    try:
+        year = int(request.args.get('year') or datetime.utcnow().year)
+        month = int(request.args.get('month') or datetime.utcnow().month)
+        credit = float(request.args.get('credit_brought_forward') or 0)
+    except (TypeError, ValueError):
+        year, month, credit = datetime.utcnow().year, datetime.utcnow().month, 0
+    return jsonify(vat_engine.declaration_for_month(year, month, credit_brought_forward=credit))
+
+
+# ─── Aged receivables / payables ───────────────────────────────
+
+@app.route('/api/finance/aged/receivables', methods=['GET'])
+@login_required
+def api_aged_receivables():
+    return jsonify(aged_engine.aged_receivables())
+
+
+@app.route('/api/finance/aged/payables', methods=['GET'])
+@login_required
+def api_aged_payables():
+    return jsonify(aged_engine.aged_payables(fx_rates=fx_rates))
+
+
+# ─── Invoice payments (multi-payment) ──────────────────────────
+
+@app.route('/api/finance/payments/for_invoice/<invoice_id>', methods=['GET'])
+@login_required
+def api_payments_for_invoice(invoice_id):
+    return jsonify({'payments': inv_payment_store.list_for_invoice(invoice_id),
+                    'total_paid': inv_payment_store.total_paid_for_invoice(invoice_id)})
+
+
+@app.route('/api/finance/payments/for_customer_invoice/<ciid>', methods=['GET'])
+@login_required
+def api_payments_for_customer_invoice(ciid):
+    return jsonify({'payments': inv_payment_store.list_for_customer_invoice(ciid),
+                    'total_received': inv_payment_store.total_received_for_customer_invoice(ciid)})
+
+
+@app.route('/api/finance/payments', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='payment.create', entity='invoice_payment')
+def api_payments_create():
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify({'status': 'ok', 'payment': inv_payment_store.add(data, created_by=_current_user_id())})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/finance/payments/delete', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='payment.delete', entity='invoice_payment', entity_arg='id')
+def api_payments_delete():
+    data = request.get_json(force=True) or {}
+    if not inv_payment_store.delete((data.get('id') or '').strip()):
+        return jsonify({'error': 'Paiement introuvable'}), 404
+    return jsonify({'status': 'ok'})
+
+
+# ─── Customer invoice PDF generation ───────────────────────────
+
+@app.route('/api/finance/income/<ciid>/pdf', methods=['GET'])
+@login_required
+def api_customer_invoice_pdf(ciid):
+    inv = income_store.get(ciid)
+    if not inv:
+        return jsonify({'error': 'Facture introuvable'}), 404
+    client = client_store.get(inv.get('client_id') or '') or {}
+    # Project name (optional)
+    if inv.get('project_id'):
+        prj = project_store.get(inv['project_id'])
+        if prj:
+            inv['project_name'] = prj.get('name') or prj.get('code') or ''
+    # Company config
+    try:
+        company = CompanyManager().get_company()
+    except Exception:
+        company = {}
+    try:
+        pdf_bytes = customer_invoice_pdf.render_invoice_pdf(inv, client, company)
+    except Exception as e:
+        logger.exception('customer_invoice_pdf_failed')
+        return jsonify({'error': f"Erreur génération PDF : {e}"}), 500
+    fname = customer_invoice_pdf.safe_filename(inv.get('invoice_ref') or 'facture')
+    audit_store.record(
+        action='customer_invoice.pdf.download',
+        actor_id=session.get('user_id', ''),
+        actor_email=session.get('user_email', ''),
+        entity_type='customer_invoice', entity_id=ciid,
         ip=request.headers.get('X-Forwarded-For', request.remote_addr) or '', ok=True,
     )
     return send_file(

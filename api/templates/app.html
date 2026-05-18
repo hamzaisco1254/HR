@@ -901,6 +901,17 @@ select{cursor:pointer;appearance:none;
   <a href="#" onclick="showPage('planned',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
     Depenses prevues</a>
+  <div class="sep"></div>
+  <div class="sec">Comptabilité</div>
+  <a href="#" onclick="showPage('vat',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
+    Déclaration TVA</a>
+  <a href="#" onclick="showPage('aged',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    Échéancier</a>
+  <a href="#" onclick="showPage('vendors',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+    Fournisseurs</a>
   <a href="#" onclick="showPage('upload',this)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
     Upload Facture</a>
@@ -1638,10 +1649,13 @@ select{cursor:pointer;appearance:none;
       <div><label>Projet</label><select class="form-select" id="inc-project"><option value="">-- Aucun --</option></select></div>
       <div><label>Effort estime (jours)</label><input type="number" step="0.5" min="0" class="input" id="inc-effort"></div>
       <div><label>Date emission</label><input type="date" class="input" id="inc-issue"></div>
-      <div><label>Montant facture *</label><input type="number" step="0.01" min="0" class="input" id="inc-amount"></div>
+      <div><label>Montant HT</label><input type="number" step="0.01" min="0" class="input" id="inc-amount-ht" oninput="incRecomputeVat('ht')"></div>
+      <div><label>Taux TVA (%)</label><select class="form-select" id="inc-vat-rate" onchange="incRecomputeVat('rate')"><option value="0">0% (export EU)</option><option value="7">7%</option><option value="13">13%</option><option value="19">19% (standard TN)</option></select></div>
+      <div><label>Montant TVA</label><input type="number" step="0.01" class="input" id="inc-vat-amount" readonly style="background:var(--bg);"></div>
+      <div><label>Montant TTC *</label><input type="number" step="0.01" min="0" class="input" id="inc-amount" oninput="incRecomputeVat('ttc')"></div>
       <div><label>Devise</label><select class="form-select" id="inc-currency" onchange="incRecomputeTnd()"><option>EUR</option><option>TND</option><option>USD</option></select></div>
       <div><label>Taux de change (override)</label><input type="number" step="0.0001" min="0" class="input" id="inc-fx" oninput="incRecomputeTnd()" placeholder="Auto"></div>
-      <div><label>Montant attendu (TND)</label><input type="number" step="0.01" class="input" id="inc-amount-tnd" readonly style="background:var(--bg);"></div>
+      <div><label>TTC en TND</label><input type="number" step="0.01" class="input" id="inc-amount-tnd" readonly style="background:var(--bg);"></div>
       <div><label>Date echeance</label><input type="date" class="input" id="inc-due"></div>
       <div><label>Statut</label><select class="form-select" id="inc-status" onchange="incOnStatusChange()">
         <option value="draft">Brouillon</option>
@@ -1931,6 +1945,122 @@ select{cursor:pointer;appearance:none;
     </div>
   </div>
 </div>
+
+<!-- ═══════════ COMPTABILITÉ — DÉCLARATION TVA ═══════════ -->
+<style>
+.tva-tile{background:white;border:1px solid var(--border-l);border-radius:var(--radius);padding:18px 22px;text-align:center;}
+.tva-tile .lbl{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);}
+.tva-tile .val{font-size:22px;font-weight:900;margin-top:6px;font-variant-numeric:tabular-nums;}
+.tva-tile.pos .val{color:#dc2626;}
+.tva-tile.neg .val{color:#059669;}
+.tva-tile.neu .val{color:var(--text);}
+.aged-bar{height:14px;border-radius:7px;background:var(--bg);overflow:hidden;display:flex;}
+.aged-bar .seg{height:100%;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:800;}
+</style>
+
+<div class="page" id="pg-vat">
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div>
+      <h2>Déclaration TVA</h2>
+      <p>TVA collectée − TVA déductible = TVA due (Tunisie)</p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <select class="form-select" id="vat-year" onchange="loadVAT()" style="max-width:120px;"></select>
+      <button class="btn btn-outline btn-sm" onclick="loadVAT()">Actualiser</button>
+    </div>
+  </div>
+
+  <!-- Yearly summary tiles -->
+  <div class="grid4" id="vat-summary" style="margin-bottom:18px;"></div>
+
+  <!-- Monthly table -->
+  <div class="card">
+    <h3>Déclarations mensuelles</h3>
+    <p style="font-size:11px;color:var(--muted);margin-top:4px;">Le crédit reporté du mois N alimente automatiquement le mois N+1.</p>
+    <div id="vat-monthly-table" style="margin-top:14px;overflow-x:auto;"></div>
+  </div>
+
+  <!-- Monthly drill-down -->
+  <div class="card" style="margin-top:16px;">
+    <h3>Détail du mois sélectionné</h3>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:6px;">
+      <label style="font-size:12px;color:var(--muted);">Mois :</label>
+      <select class="form-select" id="vat-detail-month" onchange="loadVATMonth()" style="max-width:200px;"></select>
+    </div>
+    <div id="vat-detail-content" style="margin-top:14px;"></div>
+  </div>
+</div>
+
+
+<!-- ═══════════ COMPTABILITÉ — ÉCHÉANCIER (Aged) ═══════════ -->
+<div class="page" id="pg-aged">
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div>
+      <h2>Échéancier — Créances &amp; Dettes</h2>
+      <p>Vieillissement des factures clients (à recevoir) et fournisseurs (à payer)</p>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="loadAged()">Actualiser</button>
+  </div>
+
+  <div class="grid2" style="gap:18px;">
+    <!-- Receivables -->
+    <div class="card">
+      <h3>À recevoir (créances clients)</h3>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px;">Solde restant à encaisser par tranche d'ancienneté.</p>
+      <div id="aged-rcv-summary" style="margin-top:14px;"></div>
+      <div id="aged-rcv-by-client" style="margin-top:14px;"></div>
+    </div>
+    <!-- Payables -->
+    <div class="card">
+      <h3>À payer (dettes fournisseurs)</h3>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px;">Solde restant à régler par tranche d'ancienneté.</p>
+      <div id="aged-pay-summary" style="margin-top:14px;"></div>
+      <div id="aged-pay-by-vendor" style="margin-top:14px;"></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════ COMPTABILITÉ — FOURNISSEURS ═══════════ -->
+<div class="page" id="pg-vendors">
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div>
+      <h2>Fournisseurs</h2>
+      <p>Référentiel normalisé des fournisseurs (registre commercial, ID TVA, modalités)</p>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-outline btn-sm" onclick="vendorsBackfill()" title="Crée automatiquement des fournisseurs depuis les noms libres des factures existantes">Import auto</button>
+      <button class="btn btn-pink btn-sm" onclick="openVendorModal()">+ Nouveau fournisseur</button>
+    </div>
+  </div>
+  <div id="vendors-list"></div>
+</div>
+
+<!-- Vendor modal -->
+<div class="modal-overlay" id="vendor-modal">
+  <div class="modal-box" style="max-width:640px;">
+    <h3 style="margin-bottom:18px;" id="vendor-modal-title">Nouveau fournisseur</h3>
+    <input type="hidden" id="vd-id">
+    <div class="grid2">
+      <div style="grid-column:1/-1;"><label>Nom commercial *</label><input class="input" id="vd-name"></div>
+      <div><label>Raison sociale</label><input class="input" id="vd-legal-name"></div>
+      <div><label>Pays (ISO 2)</label><input class="input" id="vd-country" maxlength="2" style="text-transform:uppercase;" placeholder="TN"></div>
+      <div><label>Matricule fiscal</label><input class="input" id="vd-tax-id"></div>
+      <div><label>N° TVA</label><input class="input" id="vd-vat-id"></div>
+      <div><label>Email</label><input type="email" class="input" id="vd-email"></div>
+      <div><label>Téléphone</label><input class="input" id="vd-phone"></div>
+      <div style="grid-column:1/-1;"><label>Adresse</label><input class="input" id="vd-address"></div>
+      <div><label>Délai paiement (jours)</label><input type="number" class="input" id="vd-terms" value="30" min="0" max="365"></div>
+      <div><label>Catégorie par défaut</label><select class="form-select" id="vd-category"><option value="">-- Aucune --</option></select></div>
+      <div style="grid-column:1/-1;"><label>Notes</label><input class="input" id="vd-notes"></div>
+    </div>
+    <div style="margin-top:22px;display:flex;gap:10px;">
+      <button class="btn btn-pink" onclick="saveVendor()" style="flex:1;">Sauvegarder</button>
+      <button class="btn btn-outline" onclick="closeOrgModal('vendor-modal')">Annuler</button>
+    </div>
+  </div>
+</div>
+
 
 <!-- ═══════ MR HAMZA — AI CHATBOT ═══════ -->
 <div class="page {% if active_tab=='chat' %}active{% endif %}" id="pg-chat">
@@ -2458,6 +2588,9 @@ function showPage(id,el){
   if(id==='statements')loadStatementsPage();
   if(id==='planned')loadPlannedPage();
   if(id==='jd')loadJdPage();
+  if(id==='vat')loadVAT();
+  if(id==='aged')loadAged();
+  if(id==='vendors')loadVendors();
 }
 const api=(u,o)=>fetch(u,o).then(r=>r.json());
 const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
@@ -3918,6 +4051,7 @@ async function loadIncome(){
         <td>${overdueDot}${escHtml(i.due_date)||'—'}</td>
         <td style="white-space:nowrap;text-align:right;">
           <button class="btn btn-outline btn-sm" onclick='editIncome(${JSON.stringify(i).replace(/'/g,"&apos;")})' title="Modifier">&#9998;</button>
+          <button class="btn btn-outline btn-sm" onclick="window.open('/api/finance/income/${i.id}/pdf','_blank')" title="Télécharger PDF">📄</button>
           ${i.status!=='paid'?`<button class="btn btn-outline btn-sm" onclick="markIncomePaid('${i.id}')" title="Marquer payee">&#128176;</button>`:''}
           <button class="btn btn-danger btn-sm" onclick="deleteIncome('${i.id}')">&#128465;</button>
         </td>
@@ -3961,7 +4095,9 @@ async function loadIncomeKpis(){
 
 async function openIncomeModal(){
   // Reset
-  ['inc-id','inc-pdf-filename','inc-period','inc-ref','inc-effort','inc-issue','inc-amount','inc-fx','inc-amount-tnd','inc-due','inc-received-tnd','inc-paid-at','inc-notes'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  ['inc-id','inc-pdf-filename','inc-period','inc-ref','inc-effort','inc-issue','inc-amount','inc-amount-ht','inc-vat-amount','inc-fx','inc-amount-tnd','inc-due','inc-received-tnd','inc-paid-at','inc-notes'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+  // Default VAT to 0% (export EU) since most clients are likely foreign
+  const vatSel = document.getElementById('inc-vat-rate'); if(vatSel) vatSel.value = '0';
   document.getElementById('inc-pdf-row').style.display='none';
   document.getElementById('inc-currency').value='EUR';
   document.getElementById('inc-status').value='draft';
@@ -3997,6 +4133,9 @@ async function editIncome(i){
   document.getElementById('inc-effort').value=i.effort_days??'';
   document.getElementById('inc-issue').value=i.issue_date||'';
   document.getElementById('inc-amount').value=i.amount??'';
+  document.getElementById('inc-amount-ht').value=i.amount_ht??'';
+  document.getElementById('inc-vat-amount').value=i.vat_amount??'';
+  const vSel = document.getElementById('inc-vat-rate'); if(vSel) vSel.value = String(i.vat_rate ?? 0);
   document.getElementById('inc-currency').value=i.currency||'EUR';
   document.getElementById('inc-fx').value=i.fx_rate??'';
   document.getElementById('inc-amount-tnd').value=i.amount_tnd??'';
@@ -4028,6 +4167,33 @@ function incRecomputeTnd(){
   document.getElementById('inc-amount-tnd').value = (amt*rate).toFixed(2);
 }
 
+function incRecomputeVat(source){
+  // source: 'ht' = recompute TTC from HT; 'ttc' = recompute HT from TTC; 'rate' = recompute everything
+  const rate = parseFloat(document.getElementById('inc-vat-rate').value)||0;
+  const htEl  = document.getElementById('inc-amount-ht');
+  const ttcEl = document.getElementById('inc-amount');
+  const vatEl = document.getElementById('inc-vat-amount');
+  let ht  = parseFloat(htEl.value)||0;
+  let ttc = parseFloat(ttcEl.value)||0;
+  if(source==='ht' || (source==='rate' && ht>0)){
+    const vat = ht * rate / 100;
+    ttc = ht + vat;
+    ttcEl.value = ttc.toFixed(2);
+    vatEl.value = vat.toFixed(2);
+  } else if(source==='ttc' || (source==='rate' && ttc>0)){
+    if(rate>0){
+      ht = ttc / (1 + rate/100);
+      const vat = ttc - ht;
+      htEl.value = ht.toFixed(2);
+      vatEl.value = vat.toFixed(2);
+    } else {
+      htEl.value = ttc.toFixed(2);
+      vatEl.value = '0.00';
+    }
+  }
+  incRecomputeTnd();
+}
+
 function incOnStatusChange(){
   const s = document.getElementById('inc-status').value;
   const show = s==='paid';
@@ -4045,6 +4211,7 @@ async function saveIncome(){
   // Recompute TND just before save
   incRecomputeTnd();
   const id = document.getElementById('inc-id').value;
+  const vatRateEl = document.getElementById('inc-vat-rate');
   const body = {
     invoice_ref:   document.getElementById('inc-ref').value,
     period_month:  document.getElementById('inc-period').value,
@@ -4054,6 +4221,8 @@ async function saveIncome(){
     effort_days:   document.getElementById('inc-effort').value||null,
     issue_date:    document.getElementById('inc-issue').value||null,
     amount:        parseFloat(document.getElementById('inc-amount').value)||0,
+    amount_ht:     parseFloat(document.getElementById('inc-amount-ht').value)||null,
+    vat_rate:      vatRateEl ? parseFloat(vatRateEl.value) : null,
     currency:      document.getElementById('inc-currency').value,
     fx_rate:       document.getElementById('inc-fx').value||null,
     due_date:      document.getElementById('inc-due').value||null,
@@ -4296,6 +4465,263 @@ function _stRenderExpByCategory(eb){
   const total = eb.grand_total || 1;
   document.getElementById('st-exp-cat-table').innerHTML =
     `<table class="tbl" style="margin:0;"><thead><tr><th>Categorie</th><th style="text-align:right;">Montant</th><th style="text-align:right;">%</th></tr></thead><tbody>${data.map(r=>`<tr><td>${escHtml(labelOf(r.category))}</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_stFmt(r.amount_tnd)}</td><td style="text-align:right;font-variant-numeric:tabular-nums;">${Math.round(100*r.amount_tnd/total)}%</td></tr>`).join('')}</tbody></table><div style="margin-top:8px;font-size:11px;color:var(--muted);text-align:right;">Total : <strong>${_stFmt(total)}</strong></div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   COMPTABILITÉ — TVA, Échéancier, Fournisseurs
+   ══════════════════════════════════════════════════════════════ */
+const FR_MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+function _accFmt(v){return (Number(v)||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' TND';}
+
+/* ── TVA Declaration ─────────────────────────────────────── */
+async function loadVAT(){
+  const ySel = document.getElementById('vat-year');
+  if(ySel && ySel.options.length===0){
+    const now = new Date().getFullYear();
+    for(let y=now;y>=now-4;y--){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===now)o.selected=true;ySel.appendChild(o);}
+  }
+  const monthSel = document.getElementById('vat-detail-month');
+  if(monthSel && monthSel.options.length===0){
+    const now = new Date();
+    for(let m=1;m<=12;m++){const o=document.createElement('option');o.value=m;o.textContent=FR_MONTHS[m-1];if(m===now.getMonth()+1)o.selected=true;monthSel.appendChild(o);}
+  }
+  const year = ySel.value || new Date().getFullYear();
+  const d = await api('/api/finance/vat/year?year='+year);
+
+  // Summary tiles
+  const tot = d.year_total || {};
+  document.getElementById('vat-summary').innerHTML = `
+    <div class="tva-tile neu"><div class="lbl">TVA collectée (année)</div><div class="val">${_accFmt(tot.collected_vat)}</div></div>
+    <div class="tva-tile neu"><div class="lbl">TVA déductible (année)</div><div class="val">${_accFmt(tot.deductible_vat)}</div></div>
+    <div class="tva-tile pos"><div class="lbl">TVA payée (cumul)</div><div class="val">${_accFmt(tot.vat_paid_ytd)}</div></div>
+    <div class="tva-tile neg"><div class="lbl">Crédit reporté (fin d'année)</div><div class="val">${_accFmt(tot.credit_carry_forward)}</div></div>
+  `;
+
+  // Monthly table
+  const rows = (d.months || []).map(m=>{
+    const due = m.vat_due;
+    const tag = due > 0 ? `<span style="color:#dc2626;font-weight:700;">À payer</span>` :
+                (due < 0 ? `<span style="color:#059669;font-weight:700;">Crédit</span>` : '—');
+    return `<tr>
+      <td><strong>${m.label}</strong></td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${_accFmt(m.collected_vat)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${_accFmt(m.deductible_vat)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);">${_accFmt(m.credit_brought_forward)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:800;color:${due>0?'#dc2626':'#059669'};">${due>=0?'+':''}${_accFmt(due)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_accFmt(m.vat_to_pay)}</td>
+      <td>${tag}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('vat-monthly-table').innerHTML = `
+    <table class="tbl" style="margin:0;width:100%;">
+      <thead><tr>
+        <th>Mois</th><th style="text-align:right;">TVA collectée</th><th style="text-align:right;">TVA déductible</th>
+        <th style="text-align:right;">Crédit reporté</th><th style="text-align:right;">Solde</th>
+        <th style="text-align:right;">À payer</th><th>État</th>
+      </tr></thead><tbody>${rows}</tbody>
+    </table>`;
+
+  loadVATMonth();
+}
+
+async function loadVATMonth(){
+  const year = document.getElementById('vat-year').value || new Date().getFullYear();
+  const month = document.getElementById('vat-detail-month').value || (new Date().getMonth()+1);
+  const d = await api(`/api/finance/vat/month?year=${year}&month=${month}`);
+  const el = document.getElementById('vat-detail-content');
+  const coll = d.collected || {lines:[]};
+  const ded  = d.deductible || {lines:[]};
+  const lineRows = (lines, who) => lines.length
+    ? `<table class="tbl" style="margin:0;width:100%;font-size:11px;"><thead><tr><th>${who}</th><th>Date</th><th style="text-align:right;">HT</th><th style="text-align:right;">Taux</th><th style="text-align:right;">TVA</th></tr></thead><tbody>${
+        lines.map(l=>`<tr>
+          <td>${escHtml(l.client_name||l.supplier||'')} <code style="font-size:10px;color:var(--muted);">${escHtml(l.invoice_ref||'')}</code></td>
+          <td>${escHtml(l.issue_date||l.invoice_date||'')}</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;">${_accFmt(l.amount_ht)}</td>
+          <td style="text-align:right;">${(l.vat_rate||0).toFixed(2)}%</td>
+          <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_accFmt(l.vat_amount)}</td>
+        </tr>`).join('')
+      }</tbody></table>`
+    : `<div style="color:var(--muted);font-size:11px;padding:14px;text-align:center;">Aucune ligne ce mois.</div>`;
+  el.innerHTML = `
+    <h4 style="margin-top:18px;color:var(--pink);">TVA collectée — ${_accFmt(coll.total_vat)} (HT total ${_accFmt(coll.total_ht)})</h4>
+    ${lineRows(coll.lines, 'Client')}
+    <h4 style="margin-top:18px;color:var(--purple);">TVA déductible — ${_accFmt(ded.total_vat)} (HT total ${_accFmt(ded.total_ht)})</h4>
+    ${lineRows(ded.lines, 'Fournisseur')}
+    <div style="margin-top:14px;background:var(--bg);padding:12px 14px;border-radius:var(--radius-xs);font-size:12px;">
+      <strong>Solde du mois :</strong>
+      ${d.vat_due >= 0 ? 'TVA à payer ' : 'Crédit reporté '}
+      <strong style="color:${d.vat_due>=0?'#dc2626':'#059669'};">${_accFmt(Math.abs(d.vat_due))}</strong>
+    </div>`;
+}
+
+/* ── Aged Receivables & Payables ─────────────────────────── */
+async function loadAged(){
+  const [rcv, pay] = await Promise.all([
+    api('/api/finance/aged/receivables'),
+    api('/api/finance/aged/payables'),
+  ]);
+  renderAgedSummary('aged-rcv-summary', rcv, 'pink');
+  renderAgedSummary('aged-pay-summary', pay, 'red');
+  renderAgedDetail('aged-rcv-by-client', rcv.by_client || [], 'client_name', rcv.grand_total);
+  renderAgedDetail('aged-pay-by-vendor', pay.by_vendor || [], 'vendor_name', pay.grand_total);
+}
+
+function renderAgedSummary(elId, data, colorScheme){
+  const buckets = data.buckets || {};
+  const total = data.grand_total || 0;
+  const colors = colorScheme === 'pink'
+    ? ['#fce7f3','#fbcfe8','#f9a8d4','#f472b6','#ec4899']
+    : ['#fef3c7','#fde68a','#fbbf24','#f59e0b','#dc2626'];
+  const order = ['current','b30','b60','b90','b120'];
+  let bar = '<div class="aged-bar">';
+  order.forEach((k, i) => {
+    const v = (buckets[k]||{}).total || 0;
+    const pct = total > 0 ? (100 * v / total) : 0;
+    if(pct > 0){
+      bar += `<div class="seg" style="background:${colors[i]};width:${pct}%;" title="${(buckets[k]||{}).label||k}: ${_accFmt(v)}">${pct>=8?Math.round(pct)+'%':''}</div>`;
+    }
+  });
+  bar += '</div>';
+
+  const tiles = order.map((k, i) => {
+    const b = buckets[k] || {};
+    return `<div style="text-align:center;padding:8px;background:var(--bg);border-radius:var(--radius-xs);">
+      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700;letter-spacing:.5px;">${escHtml(b.label||k)}</div>
+      <div style="font-size:14px;font-weight:900;margin-top:4px;color:${i<2?'#065f46':(i<3?'#92400e':'#991b1b')};">${_accFmt(b.total)}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById(elId).innerHTML = `
+    <div style="background:var(--bg);padding:12px 14px;border-radius:var(--radius);margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
+        <span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700;">Total en attente</span>
+        <strong style="font-size:18px;font-variant-numeric:tabular-nums;">${_accFmt(total)}</strong>
+      </div>
+      ${bar}
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:12px;">${tiles}</div>
+    </div>`;
+}
+
+function renderAgedDetail(elId, items, nameKey, total){
+  if(!items.length){
+    document.getElementById(elId).innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;font-size:11px;">Aucune ligne en attente.</div>';
+    return;
+  }
+  const rows = items.slice(0, 15).map(it => {
+    const order = ['current','b30','b60','b90','b120'];
+    const cells = order.map(k => `<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;">${(it.buckets[k]||0)>0?_accFmt(it.buckets[k]):'—'}</td>`).join('');
+    return `<tr>
+      <td><strong>${escHtml(it[nameKey])}</strong></td>
+      ${cells}
+      <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:800;">${_accFmt(it.total)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById(elId).innerHTML = `
+    <table class="tbl" style="margin:0;width:100%;font-size:11px;">
+      <thead><tr>
+        <th>${nameKey === 'client_name' ? 'Client' : 'Fournisseur'}</th>
+        <th style="text-align:right;">À échoir</th>
+        <th style="text-align:right;">1-30j</th>
+        <th style="text-align:right;">31-60j</th>
+        <th style="text-align:right;">61-90j</th>
+        <th style="text-align:right;">>90j</th>
+        <th style="text-align:right;">Total</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+/* ── Vendors ──────────────────────────────────────────────── */
+async function loadVendors(){
+  const d = await api('/api/finance/vendors');
+  const list = d.vendors || [];
+  const el = document.getElementById('vendors-list');
+  if(!list.length){
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px;font-size:12px;">Aucun fournisseur enregistré. Cliquez sur "Import auto" pour migrer depuis les factures existantes.</div>';
+    return;
+  }
+  el.innerHTML = `<table class="tbl" style="margin:0;width:100%;">
+    <thead><tr><th>Nom</th><th>Matricule fiscal</th><th>Pays</th><th>Délai</th><th style="text-align:right;">Factures</th><th style="text-align:right;">Total dépensé</th><th></th></tr></thead>
+    <tbody>${list.map(v=>`<tr>
+      <td><strong>${escHtml(v.name)}</strong>${v.legal_name?`<div style="font-size:10px;color:var(--muted);">${escHtml(v.legal_name)}</div>`:''}</td>
+      <td>${escHtml(v.tax_id)||'—'}</td>
+      <td>${escHtml(v.country)}</td>
+      <td>${v.default_payment_terms_days}j</td>
+      <td style="text-align:right;">${v.invoice_count}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_accFmt(v.total_spent_tnd)}</td>
+      <td style="text-align:right;white-space:nowrap;">
+        <button class="btn btn-outline btn-sm" onclick='editVendor(${JSON.stringify(v).replace(/'/g,"&apos;")})'>Modifier</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteVendor('${v.id}')">×</button>
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+async function openVendorModal(){
+  ['vd-id','vd-name','vd-legal-name','vd-tax-id','vd-vat-id','vd-email','vd-phone','vd-address','vd-notes'].forEach(i=>{document.getElementById(i).value='';});
+  document.getElementById('vd-country').value = 'TN';
+  document.getElementById('vd-terms').value = '30';
+  await invCatPopulate('vd-category');
+  document.getElementById('vd-category').value = '';
+  document.getElementById('vendor-modal-title').textContent = 'Nouveau fournisseur';
+  document.getElementById('vendor-modal').classList.add('show');
+}
+
+async function editVendor(v){
+  await invCatPopulate('vd-category');
+  document.getElementById('vd-id').value = v.id;
+  document.getElementById('vd-name').value = v.name||'';
+  document.getElementById('vd-legal-name').value = v.legal_name||'';
+  document.getElementById('vd-tax-id').value = v.tax_id||'';
+  document.getElementById('vd-vat-id').value = v.vat_id||'';
+  document.getElementById('vd-country').value = v.country||'TN';
+  document.getElementById('vd-email').value = v.email||'';
+  document.getElementById('vd-phone').value = v.phone||'';
+  document.getElementById('vd-address').value = v.address||'';
+  document.getElementById('vd-terms').value = v.default_payment_terms_days||30;
+  document.getElementById('vd-category').value = v.default_category||'';
+  document.getElementById('vd-notes').value = v.notes||'';
+  document.getElementById('vendor-modal-title').textContent = 'Modifier fournisseur';
+  document.getElementById('vendor-modal').classList.add('show');
+}
+
+async function saveVendor(){
+  const id = document.getElementById('vd-id').value;
+  const body = {
+    name: document.getElementById('vd-name').value,
+    legal_name: document.getElementById('vd-legal-name').value,
+    tax_id: document.getElementById('vd-tax-id').value,
+    vat_id: document.getElementById('vd-vat-id').value,
+    country: document.getElementById('vd-country').value,
+    email: document.getElementById('vd-email').value,
+    phone: document.getElementById('vd-phone').value,
+    address: document.getElementById('vd-address').value,
+    default_payment_terms_days: parseInt(document.getElementById('vd-terms').value)||30,
+    default_category: document.getElementById('vd-category').value,
+    notes: document.getElementById('vd-notes').value,
+  };
+  if(!body.name){toast('Nom requis','error');return;}
+  const url = id ? '/api/finance/vendors/update' : '/api/finance/vendors';
+  if(id) body.id = id;
+  const r = await _orgErr(post(url, body));
+  if(!r || r.error) return;
+  toast(id?'Mis à jour':'Créé','success');
+  closeOrgModal('vendor-modal');
+  loadVendors();
+}
+
+async function deleteVendor(id){
+  if(!confirm('Supprimer ce fournisseur ?')) return;
+  const r = await _orgErr(post('/api/finance/vendors/delete',{id}));
+  if(r && !r.error){toast('Supprimé','success'); loadVendors();}
+}
+
+async function vendorsBackfill(){
+  if(!confirm('Créer automatiquement les fournisseurs depuis les factures existantes ?\nUn fournisseur est créé pour chaque nom unique trouvé, et toutes les factures sont reliées.')) return;
+  const r = await _orgErr(post('/api/finance/vendors/backfill',{}));
+  if(r && !r.error){
+    toast(`${r.created} fournisseur(s) créé(s), ${r.linked} facture(s) reliée(s)`,'success',6000);
+    loadVendors();
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════
