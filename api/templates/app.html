@@ -1948,40 +1948,116 @@ select{cursor:pointer;appearance:none;
 
 <!-- ═══════════ COMPTABILITÉ — DÉCLARATION TVA ═══════════ -->
 <style>
-.tva-tile{background:white;border:1px solid var(--border-l);border-radius:var(--radius);padding:18px 22px;text-align:center;}
-.tva-tile .lbl{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);}
-.tva-tile .val{font-size:22px;font-weight:900;margin-top:6px;font-variant-numeric:tabular-nums;}
-.tva-tile.pos .val{color:#dc2626;}
-.tva-tile.neg .val{color:#059669;}
-.tva-tile.neu .val{color:var(--text);}
-.aged-bar{height:14px;border-radius:7px;background:var(--bg);overflow:hidden;display:flex;}
-.aged-bar .seg{height:100%;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:800;}
+/* Shared accounting page styling */
+.acc-hero{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;margin-bottom:20px;}
+@media (max-width:980px){.acc-hero{grid-template-columns:1fr;}}
+.acc-hero-main{background:linear-gradient(135deg,#0f1628 0%,#1e2a47 100%);color:#fff;border-radius:var(--radius);padding:26px 28px;position:relative;overflow:hidden;}
+.acc-hero-main::before{content:'';position:absolute;top:-30%;right:-10%;width:240px;height:240px;background:radial-gradient(circle,rgba(236,72,153,0.25),transparent 70%);}
+.acc-hero-main h3{margin:0 0 6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;opacity:0.7;color:#fff;}
+.acc-hero-main .big{font-size:38px;font-weight:900;line-height:1.05;font-variant-numeric:tabular-nums;margin:8px 0;color:#fff;position:relative;}
+.acc-hero-main .big.pos{color:#fecaca;}
+.acc-hero-main .big.neg{color:#a7f3d0;}
+.acc-hero-main .sub{font-size:12px;opacity:0.85;line-height:1.5;position:relative;}
+.acc-hero-main .badges{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;position:relative;}
+.acc-hero-main .badges span{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;background:rgba(255,255,255,0.1);padding:5px 11px;border-radius:8px;}
+.acc-hero-side{background:white;border:1px solid var(--border-l);border-radius:var(--radius);padding:20px;}
+
+.acc-grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+@media (max-width:980px){.acc-grid2{grid-template-columns:1fr;}}
+
+.acc-tile{background:white;border:1px solid var(--border-l);border-radius:var(--radius);padding:16px 18px;position:relative;}
+.acc-tile .lbl{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);}
+.acc-tile .val{font-size:22px;font-weight:900;margin-top:6px;font-variant-numeric:tabular-nums;color:var(--text);}
+.acc-tile .val.pos{color:#dc2626;}
+.acc-tile .val.neg{color:#059669;}
+.acc-tile .sub{font-size:11px;color:var(--muted);margin-top:4px;font-weight:600;}
+.acc-tile .accent{position:absolute;top:0;right:0;width:60px;height:60px;opacity:0.08;}
+
+.acc-stack-bar{height:36px;border-radius:8px;background:var(--bg);overflow:hidden;display:flex;border:1px solid var(--border-l);}
+.acc-stack-bar .seg{height:100%;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:800;cursor:default;transition:opacity .15s;}
+.acc-stack-bar .seg:hover{opacity:0.85;}
+.acc-leg{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:11px;color:var(--muted);}
+.acc-leg span{display:inline-flex;align-items:center;gap:6px;}
+.acc-leg span::before{content:'';width:11px;height:11px;border-radius:3px;display:inline-block;}
+
+.acc-rank-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px dashed var(--border-l);}
+.acc-rank-row:last-child{border-bottom:none;}
+.acc-rank-row .num{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--pink),var(--purple));color:#fff;font-weight:900;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.acc-rank-row .name{flex:1;font-weight:700;font-size:12px;}
+.acc-rank-row .name small{display:block;color:var(--muted);font-weight:500;font-size:10px;}
+.acc-rank-row .amt{font-variant-numeric:tabular-nums;font-weight:800;font-size:12px;}
+
+.acc-risk-row{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:6px;background:#fef3c7;margin-bottom:6px;}
+.acc-risk-row.high{background:#fee2e2;}
+.acc-risk-row .age{font-size:10px;font-weight:800;background:rgba(0,0,0,0.06);padding:3px 8px;border-radius:6px;white-space:nowrap;}
+.acc-risk-row.high .age{background:rgba(220,38,38,0.15);color:#991b1b;}
 </style>
 
 <div class="page" id="pg-vat">
   <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
     <div>
       <h2>Déclaration TVA</h2>
-      <p>TVA collectée − TVA déductible = TVA due (Tunisie)</p>
+      <p>TVA collectée − TVA déductible = TVA due selon la fiscalité tunisienne</p>
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
       <select class="form-select" id="vat-year" onchange="loadVAT()" style="max-width:120px;"></select>
-      <button class="btn btn-outline btn-sm" onclick="loadVAT()">Actualiser</button>
+      <button class="btn btn-outline btn-sm" onclick="loadVAT()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        Actualiser
+      </button>
     </div>
   </div>
 
-  <!-- Yearly summary tiles -->
-  <div class="grid4" id="vat-summary" style="margin-bottom:18px;"></div>
+  <!-- Hero -->
+  <div class="acc-hero">
+    <div class="acc-hero-main">
+      <h3>Position TVA — Année <span id="vat-hero-year">—</span></h3>
+      <div class="big" id="vat-hero-position">— TND</div>
+      <div class="sub" id="vat-hero-sub">&nbsp;</div>
+      <div class="badges" id="vat-hero-badges"></div>
+    </div>
+    <div class="acc-hero-side">
+      <div style="font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Récapitulatif annuel</div>
+      <div class="grid2" id="vat-summary"></div>
+    </div>
+  </div>
+
+  <!-- Monthly flow chart -->
+  <div class="card" style="margin-bottom:18px;">
+    <h3>Flux TVA mensuel</h3>
+    <p style="font-size:11px;color:var(--muted);margin-top:4px;">Collectée (vert) vs Déductible (rouge) ; ligne pourpre = solde dû.</p>
+    <div style="position:relative;height:280px;margin-top:14px;"><canvas id="vat-flow-chart"></canvas></div>
+  </div>
+
+  <!-- Top contributors -->
+  <div class="acc-grid2" style="margin-bottom:18px;">
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 7 22 7 22 12"/></svg>
+        Top clients (TVA collectée)
+      </h3>
+      <div style="position:relative;height:200px;margin-top:10px;"><canvas id="vat-top-clients-chart"></canvas></div>
+      <div id="vat-top-clients-list" style="margin-top:10px;"></div>
+    </div>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--red,#dc2626)" stroke-width="2"><polyline points="22 17 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 17 22 17 22 12"/></svg>
+        Top fournisseurs (TVA déductible)
+      </h3>
+      <div style="position:relative;height:200px;margin-top:10px;"><canvas id="vat-top-suppliers-chart"></canvas></div>
+      <div id="vat-top-suppliers-list" style="margin-top:10px;"></div>
+    </div>
+  </div>
 
   <!-- Monthly table -->
-  <div class="card">
+  <div class="card" style="margin-bottom:18px;">
     <h3>Déclarations mensuelles</h3>
     <p style="font-size:11px;color:var(--muted);margin-top:4px;">Le crédit reporté du mois N alimente automatiquement le mois N+1.</p>
     <div id="vat-monthly-table" style="margin-top:14px;overflow-x:auto;"></div>
   </div>
 
   <!-- Monthly drill-down -->
-  <div class="card" style="margin-top:16px;">
+  <div class="card">
     <h3>Détail du mois sélectionné</h3>
     <div style="display:flex;gap:10px;align-items:center;margin-top:6px;">
       <label style="font-size:12px;color:var(--muted);">Mois :</label>
@@ -1997,24 +2073,67 @@ select{cursor:pointer;appearance:none;
   <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
     <div>
       <h2>Échéancier — Créances &amp; Dettes</h2>
-      <p>Vieillissement des factures clients (à recevoir) et fournisseurs (à payer)</p>
+      <p>Vieillissement des factures clients (à recevoir) et fournisseurs (à payer) au jour J</p>
     </div>
-    <button class="btn btn-outline btn-sm" onclick="loadAged()">Actualiser</button>
+    <button class="btn btn-outline btn-sm" onclick="loadAged()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      Actualiser
+    </button>
   </div>
 
-  <div class="grid2" style="gap:18px;">
-    <!-- Receivables -->
+  <!-- Dual hero -->
+  <div class="acc-grid2" style="margin-bottom:20px;">
+    <div class="acc-hero-main" style="background:linear-gradient(135deg,#065f46 0%,#10b981 100%);">
+      <h3>À recevoir</h3>
+      <div class="big neg" id="aged-rcv-total">— TND</div>
+      <div class="sub" id="aged-rcv-sub">Sur <span id="aged-rcv-count">0</span> facture(s) client(s) en attente</div>
+      <div class="badges" id="aged-rcv-badges"></div>
+    </div>
+    <div class="acc-hero-main" style="background:linear-gradient(135deg,#7f1d1d 0%,#dc2626 100%);">
+      <h3>À payer</h3>
+      <div class="big pos" id="aged-pay-total">— TND</div>
+      <div class="sub" id="aged-pay-sub">Sur <span id="aged-pay-count">0</span> facture(s) fournisseur(s) en attente</div>
+      <div class="badges" id="aged-pay-badges"></div>
+    </div>
+  </div>
+
+  <!-- Bucket donuts + risk highlights -->
+  <div class="acc-grid2" style="gap:18px;margin-bottom:18px;">
     <div class="card">
-      <h3>À recevoir (créances clients)</h3>
-      <p style="font-size:11px;color:var(--muted);margin-top:4px;">Solde restant à encaisser par tranche d'ancienneté.</p>
-      <div id="aged-rcv-summary" style="margin-top:14px;"></div>
+      <h3 style="display:flex;align-items:center;gap:8px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Ancienneté des créances clients
+      </h3>
+      <div style="position:relative;height:220px;margin-top:14px;"><canvas id="aged-rcv-chart"></canvas></div>
+      <div id="aged-rcv-buckets" style="margin-top:10px;"></div>
+    </div>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--red,#dc2626)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Ancienneté des dettes fournisseurs
+      </h3>
+      <div style="position:relative;height:220px;margin-top:14px;"><canvas id="aged-pay-chart"></canvas></div>
+      <div id="aged-pay-buckets" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <!-- Risk highlights: >90 jours -->
+  <div class="card" id="aged-risk-card" style="margin-bottom:18px;display:none;">
+    <h3 style="display:flex;align-items:center;gap:8px;color:#991b1b;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Risques critiques — plus de 60 jours
+    </h3>
+    <div id="aged-risk-list" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- Top counterparties -->
+  <div class="acc-grid2" style="gap:18px;">
+    <div class="card">
+      <h3>Top clients (à encaisser)</h3>
       <div id="aged-rcv-by-client" style="margin-top:14px;"></div>
     </div>
-    <!-- Payables -->
     <div class="card">
-      <h3>À payer (dettes fournisseurs)</h3>
-      <p style="font-size:11px;color:var(--muted);margin-top:4px;">Solde restant à régler par tranche d'ancienneté.</p>
-      <div id="aged-pay-summary" style="margin-top:14px;"></div>
+      <h3>Top fournisseurs (à régler)</h3>
       <div id="aged-pay-by-vendor" style="margin-top:14px;"></div>
     </div>
   </div>
@@ -2026,14 +2145,70 @@ select{cursor:pointer;appearance:none;
   <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
     <div>
       <h2>Fournisseurs</h2>
-      <p>Référentiel normalisé des fournisseurs (registre commercial, ID TVA, modalités)</p>
+      <p>Référentiel normalisé + analyses des dépenses — année <span id="vd-hero-year">—</span></p>
     </div>
-    <div style="display:flex;gap:10px;">
+    <div style="display:flex;gap:10px;align-items:center;">
+      <select class="form-select" id="vd-year" onchange="loadVendors()" style="max-width:120px;"></select>
       <button class="btn btn-outline btn-sm" onclick="vendorsBackfill()" title="Crée automatiquement des fournisseurs depuis les noms libres des factures existantes">Import auto</button>
       <button class="btn btn-pink btn-sm" onclick="openVendorModal()">+ Nouveau fournisseur</button>
     </div>
   </div>
-  <div id="vendors-list"></div>
+
+  <!-- 4 KPI tiles -->
+  <div class="grid4" style="margin-bottom:18px;">
+    <div class="acc-tile">
+      <div class="lbl">Fournisseurs actifs</div>
+      <div class="val" id="vd-kpi-count">—</div>
+      <div class="sub" id="vd-kpi-count-sub">&nbsp;</div>
+    </div>
+    <div class="acc-tile">
+      <div class="lbl">Total dépensé (année)</div>
+      <div class="val" id="vd-kpi-spent">— TND</div>
+      <div class="sub" id="vd-kpi-spent-sub">&nbsp;</div>
+    </div>
+    <div class="acc-tile">
+      <div class="lbl">Top fournisseur</div>
+      <div class="val" id="vd-kpi-top" style="font-size:16px;">—</div>
+      <div class="sub" id="vd-kpi-top-sub">&nbsp;</div>
+    </div>
+    <div class="acc-tile">
+      <div class="lbl">Concentration top 3</div>
+      <div class="val" id="vd-kpi-conc">—</div>
+      <div class="sub" id="vd-kpi-conc-sub">&nbsp;</div>
+    </div>
+  </div>
+
+  <!-- Charts row -->
+  <div class="acc-grid2" style="margin-bottom:18px;">
+    <div class="card">
+      <h3>Top 10 fournisseurs (montant TND)</h3>
+      <div style="position:relative;height:340px;margin-top:14px;"><canvas id="vd-top-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Répartition par catégorie</h3>
+      <div style="position:relative;height:280px;margin-top:14px;"><canvas id="vd-cat-chart"></canvas></div>
+      <div id="vd-cat-list" style="margin-top:10px;font-size:11px;"></div>
+    </div>
+  </div>
+
+  <!-- Monthly trend + geography -->
+  <div class="acc-grid2" style="margin-bottom:18px;">
+    <div class="card">
+      <h3>Évolution mensuelle des achats</h3>
+      <div style="position:relative;height:220px;margin-top:14px;"><canvas id="vd-monthly-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Achats par pays</h3>
+      <div id="vd-country-list" style="margin-top:14px;"></div>
+    </div>
+  </div>
+
+  <!-- Vendors table with sparklines -->
+  <div class="card">
+    <h3>Détail par fournisseur</h3>
+    <p style="font-size:11px;color:var(--muted);margin-top:4px;">Sparkline = 12 mois de dépenses chez ce fournisseur.</p>
+    <div id="vendors-list" style="margin-top:14px;"></div>
+  </div>
 </div>
 
 <!-- Vendor modal -->
@@ -4473,6 +4648,12 @@ function _stRenderExpByCategory(eb){
 const FR_MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 function _accFmt(v){return (Number(v)||0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' TND';}
 
+/* Chart instance registry shared across accounting pages */
+const _accCharts = {};
+function _accDestroy(id){if(_accCharts[id]){_accCharts[id].destroy();delete _accCharts[id];}}
+const _accPalette = ['#7c3aed','#ec4899','#06b6d4','#10b981','#f59e0b','#ef4444','#8b5cf6','#3b82f6','#84cc16','#14b8a6','#f97316','#a855f7','#6366f1','#64748b'];
+const _accAgedColors = ['#10b981','#84cc16','#f59e0b','#f97316','#dc2626'];
+
 /* ── TVA Declaration ─────────────────────────────────────── */
 async function loadVAT(){
   const ySel = document.getElementById('vat-year');
@@ -4486,29 +4667,122 @@ async function loadVAT(){
     for(let m=1;m<=12;m++){const o=document.createElement('option');o.value=m;o.textContent=FR_MONTHS[m-1];if(m===now.getMonth()+1)o.selected=true;monthSel.appendChild(o);}
   }
   const year = ySel.value || new Date().getFullYear();
-  const d = await api('/api/finance/vat/year?year='+year);
+  document.getElementById('vat-hero-year').textContent = year;
 
-  // Summary tiles
+  const [d, topD] = await Promise.all([
+    api('/api/finance/vat/year?year='+year),
+    api('/api/finance/vat/top_contributors?year='+year+'&n=5'),
+  ]);
+
   const tot = d.year_total || {};
+  const collected = tot.collected_vat || 0;
+  const deductible = tot.deductible_vat || 0;
+  const netPosition = collected - deductible;
+  const credit = tot.credit_carry_forward || 0;
+  const paid = tot.vat_paid_ytd || 0;
+
+  // Hero
+  const heroEl = document.getElementById('vat-hero-position');
+  const subEl  = document.getElementById('vat-hero-sub');
+  const badgesEl = document.getElementById('vat-hero-badges');
+  if(netPosition > 0){
+    heroEl.className = 'big pos';
+    heroEl.textContent = _accFmt(netPosition);
+    subEl.textContent = 'Solde net TVA à payer pour l\'année (avant crédits reportés).';
+  } else {
+    heroEl.className = 'big neg';
+    heroEl.textContent = _accFmt(Math.abs(netPosition));
+    subEl.textContent = netPosition === 0 ? 'Position équilibrée.' : 'Crédit TVA en faveur de l\'entreprise.';
+  }
+  const monthsDue = (d.months||[]).filter(m=>m.vat_to_pay>0).length;
+  badgesEl.innerHTML = `
+    <span>📤 Collectée ${_accFmt(collected)}</span>
+    <span>📥 Déductible ${_accFmt(deductible)}</span>
+    <span>💰 Versée ${_accFmt(paid)} (${monthsDue} mois)</span>
+    ${credit>0?`<span style="background:rgba(16,185,129,0.25);color:#a7f3d0;">⏭ Crédit reporté ${_accFmt(credit)}</span>`:''}`;
+
+  // Summary side card (2x2)
   document.getElementById('vat-summary').innerHTML = `
-    <div class="tva-tile neu"><div class="lbl">TVA collectée (année)</div><div class="val">${_accFmt(tot.collected_vat)}</div></div>
-    <div class="tva-tile neu"><div class="lbl">TVA déductible (année)</div><div class="val">${_accFmt(tot.deductible_vat)}</div></div>
-    <div class="tva-tile pos"><div class="lbl">TVA payée (cumul)</div><div class="val">${_accFmt(tot.vat_paid_ytd)}</div></div>
-    <div class="tva-tile neg"><div class="lbl">Crédit reporté (fin d'année)</div><div class="val">${_accFmt(tot.credit_carry_forward)}</div></div>
-  `;
+    <div class="acc-tile" style="padding:12px 14px;"><div class="lbl">Collectée</div><div class="val" style="font-size:16px;">${_accFmt(collected)}</div></div>
+    <div class="acc-tile" style="padding:12px 14px;"><div class="lbl">Déductible</div><div class="val" style="font-size:16px;">${_accFmt(deductible)}</div></div>
+    <div class="acc-tile" style="padding:12px 14px;"><div class="lbl">Payée (cumul)</div><div class="val pos" style="font-size:16px;">${_accFmt(paid)}</div></div>
+    <div class="acc-tile" style="padding:12px 14px;"><div class="lbl">Crédit fin année</div><div class="val neg" style="font-size:16px;">${_accFmt(credit)}</div></div>`;
+
+  // Monthly flow chart (collected/deductible bars + due line)
+  _accDestroy('vat-flow-chart');
+  const months = d.months || [];
+  _accCharts['vat-flow-chart'] = new Chart(document.getElementById('vat-flow-chart').getContext('2d'), {
+    data: {
+      labels: months.map(m=>FR_MONTHS[m.month-1].slice(0,3)),
+      datasets: [
+        {type:'bar', label:'TVA collectée', data: months.map(m=>m.collected_vat), backgroundColor:'rgba(16,185,129,0.78)', borderRadius:5, order:2},
+        {type:'bar', label:'TVA déductible', data: months.map(m=>-m.deductible_vat), backgroundColor:'rgba(239,68,68,0.78)', borderRadius:5, order:2},
+        {type:'line', label:'Solde dû', data: months.map(m=>m.vat_due), borderColor:'#7c3aed', backgroundColor:'rgba(124,58,237,0.1)', borderWidth:3, tension:0.3, pointRadius:4, order:1},
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{position:'bottom',labels:{usePointStyle:true,font:{size:11}}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+_accFmt(Math.abs(c.raw))}},
+      },
+      scales:{
+        y:{ticks:{callback:v=>(v>=1000||v<=-1000)?(v/1000).toFixed(0)+'K':v}},
+      }
+    }
+  });
+
+  // Top clients (collected)
+  const tc = topD.top_clients || [];
+  _accDestroy('vat-top-clients-chart');
+  if(tc.length){
+    _accCharts['vat-top-clients-chart'] = new Chart(document.getElementById('vat-top-clients-chart').getContext('2d'),{
+      type:'doughnut',
+      data:{labels:tc.map(x=>x.name), datasets:[{data:tc.map(x=>x.vat_amount), backgroundColor:_accPalette, borderWidth:2, borderColor:'#fff'}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.label+': '+_accFmt(c.raw)}}}}
+    });
+    document.getElementById('vat-top-clients-list').innerHTML = tc.map((c,i)=>`
+      <div class="acc-rank-row">
+        <div class="num" style="background:${_accPalette[i]};">${i+1}</div>
+        <div class="name">${escHtml(c.name)}<small>${c.invoice_count} facture(s) — HT ${_accFmt(c.ht_amount)}</small></div>
+        <div class="amt">${_accFmt(c.vat_amount)}</div>
+      </div>`).join('');
+  } else {
+    document.getElementById('vat-top-clients-list').innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:14px;">Aucune TVA collectée cette année.</div>';
+  }
+
+  // Top suppliers (deductible)
+  const ts = topD.top_suppliers || [];
+  _accDestroy('vat-top-suppliers-chart');
+  if(ts.length){
+    _accCharts['vat-top-suppliers-chart'] = new Chart(document.getElementById('vat-top-suppliers-chart').getContext('2d'),{
+      type:'doughnut',
+      data:{labels:ts.map(x=>x.name), datasets:[{data:ts.map(x=>x.vat_amount), backgroundColor:_accPalette, borderWidth:2, borderColor:'#fff'}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.label+': '+_accFmt(c.raw)}}}}
+    });
+    document.getElementById('vat-top-suppliers-list').innerHTML = ts.map((c,i)=>`
+      <div class="acc-rank-row">
+        <div class="num" style="background:${_accPalette[i]};">${i+1}</div>
+        <div class="name">${escHtml(c.name)}<small>${c.invoice_count} facture(s) — HT ${_accFmt(c.ht_amount)}</small></div>
+        <div class="amt">${_accFmt(c.vat_amount)}</div>
+      </div>`).join('');
+  } else {
+    document.getElementById('vat-top-suppliers-list').innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:14px;">Aucune TVA déductible cette année.</div>';
+  }
 
   // Monthly table
-  const rows = (d.months || []).map(m=>{
+  const rows = months.map(m=>{
     const due = m.vat_due;
-    const tag = due > 0 ? `<span style="color:#dc2626;font-weight:700;">À payer</span>` :
-                (due < 0 ? `<span style="color:#059669;font-weight:700;">Crédit</span>` : '—');
+    const tag = due > 0 ? `<span style="background:#fee2e2;color:#991b1b;padding:3px 9px;border-radius:8px;font-weight:700;font-size:10px;">À payer</span>`
+              : (due < 0 ? `<span style="background:#d1fae5;color:#065f46;padding:3px 9px;border-radius:8px;font-weight:700;font-size:10px;">Crédit</span>`
+                         : `<span style="color:var(--muted);font-size:10px;">—</span>`);
     return `<tr>
       <td><strong>${m.label}</strong></td>
-      <td style="text-align:right;font-variant-numeric:tabular-nums;">${_accFmt(m.collected_vat)}</td>
-      <td style="text-align:right;font-variant-numeric:tabular-nums;">${_accFmt(m.deductible_vat)}</td>
-      <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);">${_accFmt(m.credit_brought_forward)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;color:#059669;font-weight:600;">${_accFmt(m.collected_vat)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;color:#dc2626;font-weight:600;">${_accFmt(m.deductible_vat)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);font-style:italic;">${_accFmt(m.credit_brought_forward)}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:800;color:${due>0?'#dc2626':'#059669'};">${due>=0?'+':''}${_accFmt(due)}</td>
-      <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_accFmt(m.vat_to_pay)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:800;">${_accFmt(m.vat_to_pay)}</td>
       <td>${tag}</td>
     </tr>`;
   }).join('');
@@ -4560,100 +4834,256 @@ async function loadAged(){
     api('/api/finance/aged/receivables'),
     api('/api/finance/aged/payables'),
   ]);
-  renderAgedSummary('aged-rcv-summary', rcv, 'pink');
-  renderAgedSummary('aged-pay-summary', pay, 'red');
-  renderAgedDetail('aged-rcv-by-client', rcv.by_client || [], 'client_name', rcv.grand_total);
-  renderAgedDetail('aged-pay-by-vendor', pay.by_vendor || [], 'vendor_name', pay.grand_total);
+
+  // Hero — receivables
+  const rcvTotal = rcv.grand_total || 0;
+  const rcvLines = (rcv.lines || []).length;
+  const rcvOverdue = (rcv.lines || []).filter(l => l.days_overdue > 0).length;
+  document.getElementById('aged-rcv-total').textContent = _accFmt(rcvTotal);
+  document.getElementById('aged-rcv-count').textContent = rcvLines;
+  document.getElementById('aged-rcv-badges').innerHTML =
+    `<span>📊 ${(rcv.by_client||[]).length} client(s)</span>` +
+    `<span>⚠️ ${rcvOverdue} échue(s)</span>`;
+
+  // Hero — payables
+  const payTotal = pay.grand_total || 0;
+  const payLines = (pay.lines || []).length;
+  const payOverdue = (pay.lines || []).filter(l => l.days_overdue > 0).length;
+  document.getElementById('aged-pay-total').textContent = _accFmt(payTotal);
+  document.getElementById('aged-pay-count').textContent = payLines;
+  document.getElementById('aged-pay-badges').innerHTML =
+    `<span>📊 ${(pay.by_vendor||[]).length} fournisseur(s)</span>` +
+    `<span>⚠️ ${payOverdue} échue(s)</span>`;
+
+  // Donut charts + bucket pills
+  renderAgedDonut('aged-rcv-chart', 'aged-rcv-buckets', rcv);
+  renderAgedDonut('aged-pay-chart', 'aged-pay-buckets', pay);
+
+  // Risk highlights (anything > 60 days)
+  const risks = []
+    .concat((rcv.lines||[]).filter(l=>l.days_overdue>60).map(l=>({...l, side:'receivable'})))
+    .concat((pay.lines||[]).filter(l=>l.days_overdue>60).map(l=>({...l, side:'payable'})))
+    .sort((a,b)=>b.days_overdue - a.days_overdue)
+    .slice(0,10);
+  const riskCard = document.getElementById('aged-risk-card');
+  if(risks.length){
+    riskCard.style.display = 'block';
+    document.getElementById('aged-risk-list').innerHTML = risks.map(r=>{
+      const high = r.days_overdue > 90;
+      const tag = r.side === 'receivable' ? '📥 À recevoir' : '📤 À payer';
+      const name = r.side === 'receivable' ? r.client_name : r.vendor_name;
+      return `<div class="acc-risk-row ${high?'high':''}">
+        <span class="age">${r.days_overdue}j retard</span>
+        <strong style="font-size:12px;flex:1;">${escHtml(name)} <span style="color:var(--muted);font-weight:500;">— ${escHtml(r.invoice_ref||'sans réf')}</span></strong>
+        <span style="font-size:10px;opacity:0.7;">${tag}</span>
+        <strong style="font-variant-numeric:tabular-nums;">${_accFmt(r.outstanding)}</strong>
+      </div>`;
+    }).join('');
+  } else {
+    riskCard.style.display = 'none';
+  }
+
+  renderAgedDetail('aged-rcv-by-client', rcv.by_client || [], 'client_name');
+  renderAgedDetail('aged-pay-by-vendor', pay.by_vendor || [], 'vendor_name');
 }
 
-function renderAgedSummary(elId, data, colorScheme){
-  const buckets = data.buckets || {};
-  const total = data.grand_total || 0;
-  const colors = colorScheme === 'pink'
-    ? ['#fce7f3','#fbcfe8','#f9a8d4','#f472b6','#ec4899']
-    : ['#fef3c7','#fde68a','#fbbf24','#f59e0b','#dc2626'];
+function renderAgedDonut(canvasId, listId, data){
+  _accDestroy(canvasId);
   const order = ['current','b30','b60','b90','b120'];
-  let bar = '<div class="aged-bar">';
-  order.forEach((k, i) => {
-    const v = (buckets[k]||{}).total || 0;
-    const pct = total > 0 ? (100 * v / total) : 0;
-    if(pct > 0){
-      bar += `<div class="seg" style="background:${colors[i]};width:${pct}%;" title="${(buckets[k]||{}).label||k}: ${_accFmt(v)}">${pct>=8?Math.round(pct)+'%':''}</div>`;
+  const buckets = data.buckets || {};
+  const values = order.map(k => (buckets[k]||{}).total || 0);
+  const labels = order.map(k => (buckets[k]||{}).label || k);
+  const total = data.grand_total || 0;
+  if(total === 0){
+    document.getElementById(listId).innerHTML = '<div style="color:var(--muted);font-size:11px;text-align:center;padding:14px;">Rien en attente.</div>';
+    return;
+  }
+  _accCharts[canvasId] = new Chart(document.getElementById(canvasId).getContext('2d'),{
+    type:'doughnut',
+    data:{labels, datasets:[{data:values, backgroundColor:_accAgedColors, borderWidth:2, borderColor:'#fff'}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,cutout:'62%',
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:c=>c.label+': '+_accFmt(c.raw)+' ('+(100*c.raw/total).toFixed(0)+'%)'}}
+      }
     }
   });
-  bar += '</div>';
-
-  const tiles = order.map((k, i) => {
-    const b = buckets[k] || {};
-    return `<div style="text-align:center;padding:8px;background:var(--bg);border-radius:var(--radius-xs);">
-      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700;letter-spacing:.5px;">${escHtml(b.label||k)}</div>
-      <div style="font-size:14px;font-weight:900;margin-top:4px;color:${i<2?'#065f46':(i<3?'#92400e':'#991b1b')};">${_accFmt(b.total)}</div>
+  document.getElementById(listId).innerHTML = order.map((k,i)=>{
+    const v = values[i]; const pct = total>0 ? Math.round(100*v/total) : 0;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;font-size:11px;">
+      <span style="display:inline-flex;align-items:center;gap:7px;"><i style="width:10px;height:10px;border-radius:3px;background:${_accAgedColors[i]};"></i> ${escHtml(labels[i])}</span>
+      <span style="font-variant-numeric:tabular-nums;font-weight:700;">${_accFmt(v)} <small style="color:var(--muted);">(${pct}%)</small></span>
     </div>`;
   }).join('');
-
-  document.getElementById(elId).innerHTML = `
-    <div style="background:var(--bg);padding:12px 14px;border-radius:var(--radius);margin-bottom:14px;">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">
-        <span style="font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700;">Total en attente</span>
-        <strong style="font-size:18px;font-variant-numeric:tabular-nums;">${_accFmt(total)}</strong>
-      </div>
-      ${bar}
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:12px;">${tiles}</div>
-    </div>`;
 }
 
-function renderAgedDetail(elId, items, nameKey, total){
+function renderAgedDetail(elId, items, nameKey){
   if(!items.length){
     document.getElementById(elId).innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;font-size:11px;">Aucune ligne en attente.</div>';
     return;
   }
-  const rows = items.slice(0, 15).map(it => {
-    const order = ['current','b30','b60','b90','b120'];
-    const cells = order.map(k => `<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;">${(it.buckets[k]||0)>0?_accFmt(it.buckets[k]):'—'}</td>`).join('');
-    return `<tr>
-      <td><strong>${escHtml(it[nameKey])}</strong></td>
-      ${cells}
-      <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:800;">${_accFmt(it.total)}</td>
-    </tr>`;
+  const total = items.reduce((s,it)=>s+(it.total||0), 0);
+  const rows = items.slice(0, 8).map((it, idx) => {
+    const pct = total>0 ? (100 * it.total / total) : 0;
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--border-l);">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+        <strong style="font-size:12px;">${escHtml(it[nameKey])}</strong>
+        <span style="font-variant-numeric:tabular-nums;font-weight:800;font-size:12px;">${_accFmt(it.total)}</span>
+      </div>
+      <div style="height:6px;background:var(--bg);border-radius:3px;overflow:hidden;display:flex;">
+        ${['current','b30','b60','b90','b120'].map((k,i)=>{
+          const v = it.buckets[k]||0;
+          const w = it.total>0 ? (100*v/it.total) : 0;
+          return w>0 ? `<div style="background:${_accAgedColors[i]};width:${w}%;" title="${k}: ${_accFmt(v)}"></div>` : '';
+        }).join('')}
+      </div>
+    </div>`;
   }).join('');
-  document.getElementById(elId).innerHTML = `
-    <table class="tbl" style="margin:0;width:100%;font-size:11px;">
-      <thead><tr>
-        <th>${nameKey === 'client_name' ? 'Client' : 'Fournisseur'}</th>
-        <th style="text-align:right;">À échoir</th>
-        <th style="text-align:right;">1-30j</th>
-        <th style="text-align:right;">31-60j</th>
-        <th style="text-align:right;">61-90j</th>
-        <th style="text-align:right;">>90j</th>
-        <th style="text-align:right;">Total</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+  document.getElementById(elId).innerHTML = rows;
 }
 
 /* ── Vendors ──────────────────────────────────────────────── */
+function _renderSparkline(values, w=80, h=24, color='#7c3aed'){
+  if(!values || !values.length) return '';
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const stepX = w / (values.length - 1 || 1);
+  const points = values.map((v, i) => {
+    const x = i * stepX;
+    const y = h - ((v - min) / range) * h;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const lastY = h - ((values[values.length-1] - min) / range) * h;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="vertical-align:middle;">
+    <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${w - 0.5}" cy="${lastY}" r="2" fill="${color}"/>
+  </svg>`;
+}
+
 async function loadVendors(){
-  const d = await api('/api/finance/vendors');
-  const list = d.vendors || [];
-  const el = document.getElementById('vendors-list');
-  if(!list.length){
-    el.innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px;font-size:12px;">Aucun fournisseur enregistré. Cliquez sur "Import auto" pour migrer depuis les factures existantes.</div>';
+  // Year selector
+  const ySel = document.getElementById('vd-year');
+  if(ySel && ySel.options.length===0){
+    const now = new Date().getFullYear();
+    for(let y=now;y>=now-4;y--){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===now)o.selected=true;ySel.appendChild(o);}
+  }
+  const year = ySel ? ySel.value : new Date().getFullYear();
+  document.getElementById('vd-hero-year').textContent = year;
+
+  const d = await api('/api/finance/vendors/dashboard?year='+year);
+  const ov = d.overview || {};
+  const vendors = d.vendors || [];
+
+  // KPI tiles
+  document.getElementById('vd-kpi-count').textContent = ov.total_active || 0;
+  document.getElementById('vd-kpi-count-sub').textContent = `${ov.total_vendors||0} total dans le référentiel`;
+  document.getElementById('vd-kpi-spent').textContent = _accFmt(ov.total_spent_ytd_tnd);
+  document.getElementById('vd-kpi-spent-sub').textContent = `${ov.invoice_count||0} facture(s) — ticket moyen ${_accFmt(ov.avg_ticket_size)}`;
+  document.getElementById('vd-kpi-top').textContent = ov.top_vendor?.name || '—';
+  document.getElementById('vd-kpi-top-sub').textContent = ov.top_vendor?.total ? _accFmt(ov.top_vendor.total) : '—';
+  document.getElementById('vd-kpi-conc').textContent = (ov.concentration_pct || 0).toFixed(1) + '%';
+  document.getElementById('vd-kpi-conc-sub').textContent = 'Top 3 fournisseurs cumulés';
+
+  // Top 10 vendors horizontal bar
+  const top10 = vendors.slice().sort((a,b)=>(b.total_spent_tnd||0)-(a.total_spent_tnd||0)).slice(0,10);
+  _accDestroy('vd-top-chart');
+  if(top10.length){
+    _accCharts['vd-top-chart'] = new Chart(document.getElementById('vd-top-chart').getContext('2d'),{
+      type:'bar',
+      data:{labels:top10.map(v=>v.name), datasets:[{label:'TND', data:top10.map(v=>v.total_spent_tnd||0), backgroundColor:'rgba(124,58,237,0.78)', borderRadius:5}]},
+      options:{
+        indexAxis:'y',responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>_accFmt(c.raw)}}},
+        scales:{x:{ticks:{callback:v=>(v>=1000)?(v/1000).toFixed(0)+'K':v}}}
+      }
+    });
+  } else {
+    document.getElementById('vd-top-chart').getContext('2d').clearRect(0,0,9999,9999);
+  }
+
+  // Category donut
+  const cats = ov.spend_by_category || [];
+  _accDestroy('vd-cat-chart');
+  if(cats.length){
+    _accCharts['vd-cat-chart'] = new Chart(document.getElementById('vd-cat-chart').getContext('2d'),{
+      type:'doughnut',
+      data:{labels:cats.map(c=>c.label), datasets:[{data:cats.map(c=>c.amount), backgroundColor:_accPalette, borderWidth:2, borderColor:'#fff'}]},
+      options:{
+        responsive:true,maintainAspectRatio:false,cutout:'58%',
+        plugins:{legend:{position:'right',labels:{usePointStyle:true,padding:8,font:{size:11}}},tooltip:{callbacks:{label:c=>c.label+': '+_accFmt(c.raw)}}}
+      }
+    });
+    const total = cats.reduce((s,c)=>s+c.amount,0) || 1;
+    document.getElementById('vd-cat-list').innerHTML = '';
+  } else {
+    document.getElementById('vd-cat-list').innerHTML = '<div style="color:var(--muted);text-align:center;padding:14px;">Aucune catégorie classée.</div>';
+  }
+
+  // Monthly trend
+  const monthly = ov.monthly_total || [];
+  _accDestroy('vd-monthly-chart');
+  if(monthly.some(v=>v>0)){
+    _accCharts['vd-monthly-chart'] = new Chart(document.getElementById('vd-monthly-chart').getContext('2d'),{
+      type:'line',
+      data:{
+        labels: FR_MONTHS.map(m=>m.slice(0,3)),
+        datasets:[{label:'Achats TND', data:monthly, borderColor:'#7c3aed', backgroundColor:'rgba(124,58,237,0.12)', borderWidth:2.5, tension:0.35, fill:true, pointRadius:3}]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>_accFmt(c.raw)}}},
+        scales:{y:{beginAtZero:true,ticks:{callback:v=>(v>=1000)?(v/1000).toFixed(0)+'K':v}}}
+      }
+    });
+  }
+
+  // Countries
+  const countries = ov.spend_by_country || [];
+  document.getElementById('vd-country-list').innerHTML = countries.length
+    ? countries.map(c=>{
+        const total = ov.total_spent_ytd_tnd || 1;
+        const pct = (100 * c.amount / total).toFixed(1);
+        return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-l);">
+          <span style="font-size:18px;width:30px;">${c.country==='TN'?'🇹🇳':c.country==='DE'?'🇩🇪':c.country==='FR'?'🇫🇷':'🌍'}</span>
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:12px;">${escHtml(c.country)}</div>
+            <div style="font-size:10px;color:var(--muted);">${c.count} facture(s)</div>
+            <div style="height:5px;background:var(--bg);border-radius:3px;margin-top:4px;overflow:hidden;">
+              <div style="background:linear-gradient(90deg,var(--pink),var(--purple));width:${pct}%;height:100%;"></div>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-weight:800;font-variant-numeric:tabular-nums;font-size:12px;">${_accFmt(c.amount)}</div>
+            <div style="font-size:10px;color:var(--muted);">${pct}%</div>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div style="color:var(--muted);text-align:center;padding:14px;font-size:11px;">Aucune répartition disponible.</div>';
+
+  // Vendors table with sparklines
+  if(!vendors.length){
+    document.getElementById('vendors-list').innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px;font-size:12px;">Aucun fournisseur enregistré. Cliquez sur "Import auto" pour migrer depuis les factures existantes.</div>';
     return;
   }
-  el.innerHTML = `<table class="tbl" style="margin:0;width:100%;">
-    <thead><tr><th>Nom</th><th>Matricule fiscal</th><th>Pays</th><th>Délai</th><th style="text-align:right;">Factures</th><th style="text-align:right;">Total dépensé</th><th></th></tr></thead>
-    <tbody>${list.map(v=>`<tr>
+  document.getElementById('vendors-list').innerHTML = `<div style="overflow-x:auto;"><table class="tbl" style="margin:0;width:100%;">
+    <thead><tr><th>Nom</th><th>Matricule</th><th>Pays</th><th>Délai</th><th style="text-align:right;">Factures</th><th style="text-align:right;">Total ${year}</th><th>Évolution (12 mois)</th><th></th></tr></thead>
+    <tbody>${vendors.map(v=>{
+      const spark = _renderSparkline(v.monthly_spend_tnd||[]);
+      return `<tr>
       <td><strong>${escHtml(v.name)}</strong>${v.legal_name?`<div style="font-size:10px;color:var(--muted);">${escHtml(v.legal_name)}</div>`:''}</td>
-      <td>${escHtml(v.tax_id)||'—'}</td>
-      <td>${escHtml(v.country)}</td>
+      <td><code style="font-size:11px;">${escHtml(v.tax_id)||'—'}</code></td>
+      <td>${v.country==='TN'?'🇹🇳':v.country==='DE'?'🇩🇪':v.country==='FR'?'🇫🇷':'🌍'} ${escHtml(v.country)}</td>
       <td>${v.default_payment_terms_days}j</td>
       <td style="text-align:right;">${v.invoice_count}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_accFmt(v.total_spent_tnd)}</td>
+      <td style="text-align:center;">${spark}</td>
       <td style="text-align:right;white-space:nowrap;">
-        <button class="btn btn-outline btn-sm" onclick='editVendor(${JSON.stringify(v).replace(/'/g,"&apos;")})'>Modifier</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteVendor('${v.id}')">×</button>
+        <button class="btn btn-outline btn-sm" onclick='editVendor(${JSON.stringify(v).replace(/'/g,"&apos;")})' title="Modifier">&#9998;</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteVendor('${v.id}')" title="Supprimer">×</button>
       </td>
-    </tr>`).join('')}</tbody></table>`;
+    </tr>`;}).join('')}</tbody></table></div>`;
 }
 
 async function openVendorModal(){

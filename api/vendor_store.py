@@ -155,6 +155,147 @@ class VendorStore:
         # Invoices keep vendor_id NULL on delete (FK ON DELETE SET NULL)
         return db.execute("DELETE FROM vendors WHERE id = %s", (vid,)) > 0
 
+    def monthly_spend_series(self, vendor_id: str, year: int) -> List[float]:
+        """Return a 12-element list of TND amounts spent at this vendor
+        per month of the given year (for sparklines)."""
+        rows = db.query(
+            """SELECT EXTRACT(MONTH FROM invoice_date)::int AS m,
+                      SUM(COALESCE(amount_tnd, amount, 0)) AS s
+                 FROM invoices
+                WHERE vendor_id = %s
+                  AND invoice_date IS NOT NULL
+                  AND EXTRACT(YEAR FROM invoice_date) = %s
+                GROUP BY EXTRACT(MONTH FROM invoice_date)""",
+            (vendor_id, year),
+        )
+        by_month = {int(r['m']): float(r['s'] or 0) for r in rows}
+        return [round(by_month.get(m, 0), 2) for m in range(1, 13)]
+
+    def overview(self, year: Optional[int] = None) -> Dict:
+        """Aggregate metrics across all vendors for the dashboard hero.
+
+        Returns:
+          {
+            year, total_vendors, total_active, total_spent_ytd_tnd,
+            avg_ticket_size, top_vendor: {name, total},
+            concentration_pct (top-3 share),
+            spend_by_category: [{label, amount}, ...],
+            spend_by_country: [{country, amount, count}, ...],
+            monthly_total: [12 floats]   (all vendors combined)
+          }
+        """
+        from datetime import datetime as _dt
+        if year is None:
+            year = _dt.utcnow().year
+        # Total vendors
+        agg = db.one(
+            """SELECT
+                 (SELECT COUNT(*) FROM vendors) AS total,
+                 (SELECT COUNT(*) FROM vendors WHERE active = TRUE) AS active"""
+        )
+        total = int((agg or {}).get('total') or 0)
+        active = int((agg or {}).get('active') or 0)
+
+        # Total spent + per vendor for the year
+        per_vendor_rows = db.query(
+            """SELECT COALESCE(v.id, '__none__') AS vid,
+                      COALESCE(v.name, i.supplier_name, 'Inconnu') AS name,
+                      COALESCE(v.country, 'TN') AS country,
+                      SUM(COALESCE(i.amount_tnd, i.amount, 0)) AS total,
+                      COUNT(*) AS invoice_count
+                 FROM invoices i
+                 LEFT JOIN vendors v ON v.id = i.vendor_id
+                WHERE i.invoice_date IS NOT NULL
+                  AND EXTRACT(YEAR FROM i.invoice_date) = %s
+                GROUP BY v.id, v.name, i.supplier_name, v.country
+                ORDER BY total DESC""",
+            (year,),
+        )
+        total_spent = sum(float(r['total'] or 0) for r in per_vendor_rows)
+        invoice_count = sum(int(r['invoice_count'] or 0) for r in per_vendor_rows)
+        avg_ticket = (total_spent / invoice_count) if invoice_count > 0 else 0.0
+        top_vendor = {'name': '', 'total': 0.0}
+        if per_vendor_rows:
+            top_vendor = {
+                'name':  per_vendor_rows[0]['name'] or '',
+                'total': round(float(per_vendor_rows[0]['total'] or 0), 2),
+            }
+        # Concentration: top-3 share
+        top3_share_pct = 0.0
+        if total_spent > 0:
+            top3 = sum(float(r['total'] or 0) for r in per_vendor_rows[:3])
+            top3_share_pct = round(100 * top3 / total_spent, 1)
+
+        # Spend by category (uses invoices.category from AI classification)
+        cat_rows = db.query(
+            """SELECT COALESCE(category, 'autre') AS cat,
+                      SUM(COALESCE(amount_tnd, amount, 0)) AS s
+                 FROM invoices
+                WHERE invoice_date IS NOT NULL
+                  AND EXTRACT(YEAR FROM invoice_date) = %s
+                GROUP BY category
+                ORDER BY s DESC""",
+            (year,),
+        )
+        try:
+            from invoice_processor import CATEGORY_LABELS
+        except Exception:
+            CATEGORY_LABELS = {}
+        spend_by_category = [{
+            'code':   r['cat'],
+            'label':  CATEGORY_LABELS.get(r['cat'], (r['cat'] or 'autre').capitalize()),
+            'amount': round(float(r['s'] or 0), 2),
+        } for r in cat_rows]
+
+        # Spend by country
+        country_map: Dict[str, Dict] = {}
+        for r in per_vendor_rows:
+            c = r.get('country') or 'TN'
+            if c not in country_map:
+                country_map[c] = {'country': c, 'amount': 0.0, 'count': 0}
+            country_map[c]['amount'] += float(r['total'] or 0)
+            country_map[c]['count']  += int(r['invoice_count'] or 0)
+        spend_by_country = sorted(country_map.values(), key=lambda x: -x['amount'])
+        for c in spend_by_country:
+            c['amount'] = round(c['amount'], 2)
+
+        # Monthly total combined
+        monthly_rows = db.query(
+            """SELECT EXTRACT(MONTH FROM invoice_date)::int AS m,
+                      SUM(COALESCE(amount_tnd, amount, 0)) AS s
+                 FROM invoices
+                WHERE invoice_date IS NOT NULL
+                  AND EXTRACT(YEAR FROM invoice_date) = %s
+                GROUP BY EXTRACT(MONTH FROM invoice_date)""",
+            (year,),
+        )
+        by_month = {int(r['m']): float(r['s'] or 0) for r in monthly_rows}
+        monthly_total = [round(by_month.get(m, 0), 2) for m in range(1, 13)]
+
+        return {
+            'year':                  year,
+            'total_vendors':         total,
+            'total_active':          active,
+            'total_spent_ytd_tnd':   round(total_spent, 2),
+            'avg_ticket_size':       round(avg_ticket, 2),
+            'invoice_count':         invoice_count,
+            'top_vendor':            top_vendor,
+            'concentration_pct':     top3_share_pct,
+            'spend_by_category':     spend_by_category,
+            'spend_by_country':      spend_by_country,
+            'monthly_total':         monthly_total,
+        }
+
+    def list_with_sparklines(self, year: Optional[int] = None) -> List[Dict]:
+        """Like list() but each vendor gets a 12-month spend series."""
+        from datetime import datetime as _dt
+        if year is None:
+            year = _dt.utcnow().year
+        vendors = self.list(include_inactive=False)
+        for v in vendors:
+            v['monthly_spend_tnd'] = self.monthly_spend_series(v['id'], year)
+        return vendors
+
     def backfill_from_invoices(self) -> Dict:
         """One-shot migration: for every distinct supplier_name in invoices
         that has no vendor_id yet, create a vendor and link the invoices.

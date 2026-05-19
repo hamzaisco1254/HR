@@ -161,6 +161,65 @@ def declaration_for_month(year: int, month: int,
     }
 
 
+def top_contributors(year: int, n: int = 5) -> Dict:
+    """Top contributors to VAT collected (clients) and deductible (suppliers)
+    for the given year. Returns the top-N by absolute VAT amount.
+    """
+    start = date(year, 1, 1)
+    end   = date(year, 12, 31)
+
+    # Top clients by VAT collected
+    clients_rows = db.query(
+        """SELECT COALESCE(c.name, 'Inconnu') AS name,
+                  SUM(COALESCE(ci.vat_amount, 0)) AS vat_total,
+                  SUM(COALESCE(ci.amount_ht, 0))  AS ht_total,
+                  COUNT(*)                         AS invoice_count
+             FROM customer_invoices ci
+             LEFT JOIN clients c ON c.id = ci.client_id
+            WHERE ci.status NOT IN ('cancelled', 'draft')
+              AND COALESCE(ci.issue_date, ci.period_month) BETWEEN %s AND %s
+            GROUP BY c.name
+            HAVING SUM(COALESCE(ci.vat_amount, 0)) > 0
+            ORDER BY vat_total DESC
+            LIMIT %s""",
+        (start, end, n),
+    )
+    top_clients = [{
+        'name':          r['name'],
+        'vat_amount':    round(float(r['vat_total'] or 0), 2),
+        'ht_amount':     round(float(r['ht_total'] or 0), 2),
+        'invoice_count': int(r['invoice_count'] or 0),
+    } for r in clients_rows]
+
+    # Top suppliers by VAT deductible
+    suppliers_rows = db.query(
+        """SELECT COALESCE(v.name, i.supplier_name, 'Inconnu') AS name,
+                  SUM(COALESCE(i.vat_amount, 0)) AS vat_total,
+                  SUM(COALESCE(i.amount_ht, 0))  AS ht_total,
+                  COUNT(*)                       AS invoice_count
+             FROM invoices i
+             LEFT JOIN vendors v ON v.id = i.vendor_id
+            WHERE i.invoice_date BETWEEN %s AND %s
+            GROUP BY COALESCE(v.name, i.supplier_name)
+            HAVING SUM(COALESCE(i.vat_amount, 0)) > 0
+            ORDER BY vat_total DESC
+            LIMIT %s""",
+        (start, end, n),
+    )
+    top_suppliers = [{
+        'name':          r['name'],
+        'vat_amount':    round(float(r['vat_total'] or 0), 2),
+        'ht_amount':     round(float(r['ht_total'] or 0), 2),
+        'invoice_count': int(r['invoice_count'] or 0),
+    } for r in suppliers_rows]
+
+    return {
+        'year':          year,
+        'top_clients':   top_clients,
+        'top_suppliers': top_suppliers,
+    }
+
+
 def declaration_for_year(year: int) -> Dict:
     """Compute the 12 monthly declarations of a year, with credit-carry-forward
     chained from one month to the next.

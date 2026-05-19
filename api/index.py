@@ -2121,6 +2121,19 @@ def api_vendors_list():
     return jsonify({'vendors': vendor_store.list(include_inactive=include_inactive)})
 
 
+@app.route('/api/finance/vendors/dashboard', methods=['GET'])
+@login_required
+def api_vendors_dashboard():
+    try:
+        year = int(request.args.get('year') or datetime.utcnow().year)
+    except (TypeError, ValueError):
+        year = datetime.utcnow().year
+    return jsonify({
+        'overview': vendor_store.overview(year=year),
+        'vendors':  vendor_store.list_with_sparklines(year=year),
+    })
+
+
 @app.route('/api/finance/vendors', methods=['POST'])
 @login_required
 @admin_required
@@ -2180,6 +2193,18 @@ def api_vat_year():
     except (TypeError, ValueError):
         year = datetime.utcnow().year
     return jsonify(vat_engine.declaration_for_year(year))
+
+
+@app.route('/api/finance/vat/top_contributors', methods=['GET'])
+@login_required
+def api_vat_top_contributors():
+    try:
+        year = int(request.args.get('year') or datetime.utcnow().year)
+        n    = int(request.args.get('n') or 5)
+    except (TypeError, ValueError):
+        year = datetime.utcnow().year
+        n = 5
+    return jsonify(vat_engine.top_contributors(year, n=n))
 
 
 @app.route('/api/finance/vat/month', methods=['GET'])
