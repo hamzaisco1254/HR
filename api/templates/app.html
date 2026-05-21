@@ -2767,8 +2767,60 @@ function showPage(id,el){
   if(id==='aged')loadAged();
   if(id==='vendors')loadVendors();
 }
-const api=(u,o)=>fetch(u,o).then(r=>r.json());
-const post=(u,b)=>api(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+/* Hardened fetch helper.
+   - Detects HTML responses (auth-redirect or 500 error pages) and
+     surfaces a clean error instead of letting JSON.parse() throw a
+     cryptic "Unexpected token '<'".
+   - Auto-redirects to /login on a 401 from /api/* endpoints.
+   - Returns the parsed JSON on success, or an object {error: '...'}
+     on failure so callers can branch on `d.error`.
+*/
+async function api(url, opts){
+  let resp;
+  try{
+    resp = await fetch(url, opts);
+  }catch(e){
+    return {error: 'Erreur réseau : ' + (e.message || e)};
+  }
+  const ct = (resp.headers.get('content-type') || '').toLowerCase();
+  // Auth redirect → push back to login
+  if(resp.status === 401){
+    if(url.startsWith('/api/')){
+      console.warn('Session expirée, redirection vers /login');
+      window.location.href = '/login';
+      return {error: 'Session expirée'};
+    }
+  }
+  // If server returned HTML when we expected JSON, surface a clear error
+  if(!ct.includes('application/json')){
+    const text = (await resp.text().catch(()=>'')) || '';
+    // Heuristic: an HTML error page typically starts with <!doctype or <html
+    if(/^\s*<(!doctype|html|head|body)/i.test(text)){
+      const status = resp.status;
+      // Most common: backend crashed → 500
+      const msg = status >= 500
+        ? `Erreur serveur (${status}). Le backend a renvoyé une page HTML au lieu de JSON. Voir les logs Vercel.`
+        : `Réponse inattendue (${status}). Endpoint introuvable ou session expirée.`;
+      console.error('api() got HTML:', url, status, text.slice(0, 200));
+      return {error: msg, _status: status, _html_excerpt: text.slice(0, 300)};
+    }
+    return {error: `Réponse non-JSON (${resp.status}) : ${text.slice(0, 200)}`};
+  }
+  try{
+    const data = await resp.json();
+    if(!resp.ok && !data.error){
+      data.error = `HTTP ${resp.status}`;
+    }
+    return data;
+  }catch(e){
+    return {error: 'Réponse JSON invalide : ' + (e.message || e)};
+  }
+}
+const post = (u, b) => api(u, {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify(b)
+});
 
 /* ── HR: Ref ─────────────────────────────────────────────── */
 const excelData={att:{},ord:{}};

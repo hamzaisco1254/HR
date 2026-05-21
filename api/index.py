@@ -120,6 +120,31 @@ def _set_security_headers(resp):
     return resp
 
 
+# ── JSON error handler for /api/* paths ───────────────────────────
+# Without this, an unhandled exception in any /api route causes Flask
+# to render an HTML error page, which the JS api() helper then tries
+# to JSON.parse, producing the confusing "Unexpected token '<'" error.
+@app.errorhandler(Exception)
+def _api_json_errors(e):
+    """Always return JSON for /api/* paths; otherwise re-raise to default."""
+    from werkzeug.exceptions import HTTPException
+    if not request.path.startswith('/api/'):
+        # Let Flask handle non-API routes normally
+        if isinstance(e, HTTPException):
+            return e
+        raise e
+    # Log full traceback to Vercel logs
+    logger.exception('api_unhandled_error path=%s', request.path)
+    if isinstance(e, HTTPException):
+        code = e.code or 500
+        return jsonify({'error': e.description, 'status': code}), code
+    return jsonify({
+        'error':  f"Erreur serveur : {type(e).__name__}: {str(e) or 'unknown'}",
+        'path':   request.path,
+        'status': 500,
+    }), 500
+
+
 # ── CSRF defense (Origin/Referer check, no tokens) ─────────────────────
 # SameSite=Strict cookies already block cross-site POSTs in modern browsers.
 # This adds a defense-in-depth layer: every state-changing request MUST
@@ -926,8 +951,16 @@ def api_dashboard_data():
     forecast, risk alerts) for the redesigned Vue d'ensemble."""
     today    = datetime.utcnow().date()
     year     = today.year
-    invoices = inv_store.get_all()
-    accounts = bal_store.get_all()
+    try:
+        invoices = inv_store.get_all()
+    except Exception:
+        logger.exception('dashboard_invoices_fetch_failed')
+        invoices = []
+    try:
+        accounts = bal_store.get_all()
+    except Exception:
+        logger.exception('dashboard_accounts_fetch_failed')
+        accounts = []
 
     # ── Helpers ────────────────────────────────────────────────────
     def _to_tnd(amount, currency):
