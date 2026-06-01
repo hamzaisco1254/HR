@@ -75,11 +75,19 @@ def _expense_monthly_history(fx_rates, months_back: int = 24) -> List[Dict]:
 # ─── Forecast helpers ────────────────────────────────────────────────
 
 def _add_months(d: date, n: int) -> date:
-    """Add n months to a date (n may be negative). Clamps day if needed."""
+    """Add n months to a date (n may be negative). Clamps day if needed.
+
+    Year is also clamped to [1, 9999] (Python's date() range), so callers
+    that accidentally try to project beyond year 9999 get a clamped date
+    instead of a ValueError. In practice we cap to [2000, 2100] for the
+    business domain.
+    """
     import calendar
     month_total = d.month - 1 + n
     year = d.year + month_total // 12
     month = month_total % 12 + 1
+    if year < 1:    year = 1
+    if year > 9999: year = 9999
     last_day = calendar.monthrange(year, month)[1]
     return date(year, month, min(d.day, last_day))
 

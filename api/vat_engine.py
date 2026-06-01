@@ -24,7 +24,33 @@ def _money(v) -> float:
     except (TypeError, ValueError): return 0.0
 
 
+# Python's date() only accepts year in [1, 9999]. Clamp upstream input
+# so we never crash with "date too large" / "year out of range".
+_VAT_YEAR_MIN = 2000
+_VAT_YEAR_MAX = 2100
+
+
+def _safe_year(y) -> int:
+    try:
+        y = int(y)
+    except (TypeError, ValueError):
+        return datetime.utcnow().year
+    if y < _VAT_YEAR_MIN: return _VAT_YEAR_MIN
+    if y > _VAT_YEAR_MAX: return _VAT_YEAR_MAX
+    return y
+
+
+def _safe_month(m) -> int:
+    try:
+        m = int(m)
+    except (TypeError, ValueError):
+        return 1
+    return 1 if m < 1 else 12 if m > 12 else m
+
+
 def _month_bounds(year: int, month: int):
+    year = _safe_year(year)
+    month = _safe_month(month)
     last_day = calendar.monthrange(year, month)[1]
     return date(year, month, 1), date(year, month, last_day)
 
@@ -127,6 +153,8 @@ def _collect_vat_for_month(year: int, month: int) -> Dict:
 
 def declaration_for_month(year: int, month: int,
                           credit_brought_forward: float = 0.0) -> Dict:
+    year = _safe_year(year)
+    month = _safe_month(month)
     """Compute a single month's VAT declaration.
 
     Returns:
@@ -165,6 +193,7 @@ def top_contributors(year: int, n: int = 5) -> Dict:
     """Top contributors to VAT collected (clients) and deductible (suppliers)
     for the given year. Returns the top-N by absolute VAT amount.
     """
+    year = _safe_year(year)
     start = date(year, 1, 1)
     end   = date(year, 12, 31)
 
@@ -221,6 +250,7 @@ def top_contributors(year: int, n: int = 5) -> Dict:
 
 
 def declaration_for_year(year: int) -> Dict:
+    year = _safe_year(year)
     """Compute the 12 monthly declarations of a year, with credit-carry-forward
     chained from one month to the next.
     """

@@ -115,9 +115,26 @@ def _salary_aggregate_tnd(fx_rates, months: int) -> float:
 # ─── Public API ──────────────────────────────────────────────────────
 
 def _period_bounds(year: int, month: Optional[int]) -> tuple:
-    """Return (start_date, end_date) inclusive for the requested period."""
+    """Return (start_date, end_date) inclusive for the requested period.
+
+    Year is clamped to Python's date()-supported range [2000, 2100] to
+    avoid 'date too large' / ValueError crashes when callers pass
+    garbage years.
+    """
     import calendar
+    try:
+        year = int(year)
+    except (TypeError, ValueError):
+        year = datetime.utcnow().year
+    if year < 2000: year = 2000
+    if year > 2100: year = 2100
     if month:
+        try:
+            month = int(month)
+        except (TypeError, ValueError):
+            month = 1
+        if not (1 <= month <= 12):
+            month = 1
         last = calendar.monthrange(year, month)[1]
         return date(year, month, 1), date(year, month, last)
     return date(year, 1, 1), date(year, 12, 31)

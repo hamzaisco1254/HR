@@ -91,11 +91,14 @@ def _row(r: Optional[dict]) -> Optional[dict]:
 
 
 def _add_months(d: date, n: int) -> date:
-    """Add n months to a date, clamping the day if needed."""
+    """Add n months to a date, clamping the day if needed. Year is also
+    clamped to Python's date() range to avoid 'date too large' crashes
+    when recurring expenses are walked past year 9999."""
     month_total = d.month - 1 + n
     year = d.year + month_total // 12
     month = month_total % 12 + 1
-    # Clamp day to month length
+    if year < 1:    year = 1
+    if year > 9999: year = 9999
     import calendar
     last_day = calendar.monthrange(year, month)[1]
     return date(year, month, min(d.day, last_day))
@@ -330,12 +333,23 @@ class PlannedExpenseStore:
             if not s:
                 continue
             cur = s
+            # Safety: cap the number of iterations to avoid infinite
+            # loops if _add_months ever clamps (e.g. year 9999) and
+            # stops advancing. Legitimate cases hit at most a few
+            # hundred iterations.
+            _MAX_ITER = 5000
             # Fast-forward to first occurrence >= period_start
-            while cur < period_start:
+            i = 0
+            while cur < period_start and i < _MAX_ITER:
+                prev = cur
                 cur = _add_months(cur, step_months)
+                if cur <= prev:  # didn't advance — clamp hit
+                    break
                 if cur > e:
                     break
-            while cur <= e and cur <= period_end:
+                i += 1
+            i = 0
+            while cur <= e and cur <= period_end and i < _MAX_ITER:
                 out.append({
                     'id':          r_dict['id'],
                     'name':        r_dict['name'],
@@ -345,7 +359,11 @@ class PlannedExpenseStore:
                     'department_id': r_dict['department_id'],
                     'recurring':   True,
                 })
+                prev = cur
                 cur = _add_months(cur, step_months)
+                if cur <= prev:  # didn't advance — clamp hit
+                    break
+                i += 1
         return out
 
     def total_for_period(self, period_start: date, period_end: date) -> float:

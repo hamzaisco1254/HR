@@ -225,6 +225,48 @@ def _is_schema_error(exc: Exception) -> bool:
             or 'undefined column' in msg
             or 'undefined table' in msg)
 
+
+# ── Year clamping ─────────────────────────────────────────────────
+# Python's date(year, ...) raises ValueError for year < 1 or year > 9999.
+# Some engines also do arithmetic like _add_months that can push beyond
+# this range. Clamping every user-supplied year to a sane window
+# prevents these crashes from surfacing as "date too large" errors.
+_YEAR_MIN = 2000
+_YEAR_MAX = 2100
+
+
+def _clamp_year(value, default=None):
+    """Coerce an arbitrary value to an int year in [_YEAR_MIN, _YEAR_MAX].
+
+    Falls back to ``default`` (or the current year if default is None)
+    when the value can't be parsed."""
+    if default is None:
+        default = datetime.utcnow().year
+    try:
+        y = int(value)
+    except (TypeError, ValueError):
+        return max(_YEAR_MIN, min(_YEAR_MAX, int(default)))
+    if y < _YEAR_MIN: return _YEAR_MIN
+    if y > _YEAR_MAX: return _YEAR_MAX
+    return y
+
+
+def _clamp_month(value, default=None):
+    """Coerce to int month in [1, 12]. None on missing/invalid + no default."""
+    if value in (None, ''):
+        if default is None:
+            return None
+        try:
+            d = int(default)
+            return d if 1 <= d <= 12 else None
+        except (TypeError, ValueError):
+            return None
+    try:
+        m = int(value)
+    except (TypeError, ValueError):
+        return None
+    return m if 1 <= m <= 12 else None
+
 # ---------------------------------------------------------------------------
 # Singleton managers
 # ---------------------------------------------------------------------------
@@ -1936,11 +1978,10 @@ def api_income_upload():
 # ═══════════════════════════════════════════════════════════════════
 
 def _stmt_year_month():
-    """Parse year + optional month from query string, with safe defaults."""
-    try:
-        year = int(request.args.get('year') or datetime.utcnow().year)
-    except (TypeError, ValueError):
-        year = datetime.utcnow().year
+    """Parse year + optional month from query string, with safe defaults
+    + bounds. Year is clamped to [2000, 2100] to avoid Python's date()
+    overflow when callers pass garbage like 99999."""
+    year = _clamp_year(request.args.get('year'))
     month_arg = request.args.get('month')
     try:
         month = int(month_arg) if month_arg else None
@@ -2289,10 +2330,7 @@ def api_vendors_list():
 @app.route('/api/finance/vendors/dashboard', methods=['GET'])
 @login_required
 def api_vendors_dashboard():
-    try:
-        year = int(request.args.get('year') or datetime.utcnow().year)
-    except (TypeError, ValueError):
-        year = datetime.utcnow().year
+    year = _clamp_year(request.args.get('year'))
     return jsonify({
         'overview': vendor_store.overview(year=year),
         'vendors':  vendor_store.list_with_sparklines(year=year),
@@ -2353,34 +2391,31 @@ def api_vendors_backfill():
 @app.route('/api/finance/vat/year', methods=['GET'])
 @login_required
 def api_vat_year():
-    try:
-        year = int(request.args.get('year') or datetime.utcnow().year)
-    except (TypeError, ValueError):
-        year = datetime.utcnow().year
+    year = _clamp_year(request.args.get('year'))
     return jsonify(vat_engine.declaration_for_year(year))
 
 
 @app.route('/api/finance/vat/top_contributors', methods=['GET'])
 @login_required
 def api_vat_top_contributors():
+    year = _clamp_year(request.args.get('year'))
     try:
-        year = int(request.args.get('year') or datetime.utcnow().year)
-        n    = int(request.args.get('n') or 5)
+        n = int(request.args.get('n') or 5)
     except (TypeError, ValueError):
-        year = datetime.utcnow().year
         n = 5
+    n = max(1, min(50, n))  # cap to a reasonable range
     return jsonify(vat_engine.top_contributors(year, n=n))
 
 
 @app.route('/api/finance/vat/month', methods=['GET'])
 @login_required
 def api_vat_month():
+    year = _clamp_year(request.args.get('year'))
+    month = _clamp_month(request.args.get('month'), default=datetime.utcnow().month) or datetime.utcnow().month
     try:
-        year = int(request.args.get('year') or datetime.utcnow().year)
-        month = int(request.args.get('month') or datetime.utcnow().month)
         credit = float(request.args.get('credit_brought_forward') or 0)
     except (TypeError, ValueError):
-        year, month, credit = datetime.utcnow().year, datetime.utcnow().month, 0
+        credit = 0.0
     return jsonify(vat_engine.declaration_for_month(year, month, credit_brought_forward=credit))
 
 
