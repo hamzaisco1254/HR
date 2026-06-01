@@ -189,6 +189,10 @@ class IncomeStore:
     # ─── CRUD ────────────────────────────────────────────────────
 
     def list(self, filters: Optional[Dict] = None) -> List[Dict]:
+        # Defensive filter: exclude rows whose DATE columns are outside
+        # [1900, 2200], because psycopg can't convert year > 9999 to a
+        # Python date and would crash the whole SELECT. See
+        # /api/admin/clean_bad_dates for a one-shot cleanup tool.
         sql = """
             SELECT ci.*,
                    c.name AS client_name,
@@ -199,6 +203,11 @@ class IncomeStore:
               LEFT JOIN clients     c ON c.id = ci.client_id
               LEFT JOIN departments d ON d.id = ci.department_id
               LEFT JOIN projects    p ON p.id = ci.project_id
+             WHERE (ci.period_month IS NULL OR EXTRACT(YEAR FROM ci.period_month) BETWEEN 1900 AND 2200)
+               AND (ci.issue_date   IS NULL OR EXTRACT(YEAR FROM ci.issue_date)   BETWEEN 1900 AND 2200)
+               AND (ci.due_date     IS NULL OR EXTRACT(YEAR FROM ci.due_date)     BETWEEN 1900 AND 2200)
+               AND (ci.sent_at      IS NULL OR EXTRACT(YEAR FROM ci.sent_at)      BETWEEN 1900 AND 2200)
+               AND (ci.paid_at      IS NULL OR EXTRACT(YEAR FROM ci.paid_at)      BETWEEN 1900 AND 2200)
         """
         clauses, params = [], []
         f = filters or {}
@@ -224,7 +233,8 @@ class IncomeStore:
                 pass
 
         if clauses:
-            sql += " WHERE " + " AND ".join(clauses)
+            # Base SQL already has WHERE (date sanity filter) — extend with AND.
+            sql += " AND " + " AND ".join(clauses)
         sql += " ORDER BY ci.period_month DESC, ci.created_at DESC"
 
         rows = db.query(sql, tuple(params) if params else None)

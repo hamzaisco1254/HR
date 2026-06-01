@@ -113,7 +113,16 @@ class InvoiceStore:
         return self.get_by_id(inv_id) or {'id': inv_id}
 
     def get_all(self, filters: Optional[Dict] = None) -> List[Dict]:
-        sql = "SELECT * FROM invoices"
+        # CRITICAL: filter out rows whose DATE columns have years outside
+        # [1900, 2200]. Such rows (e.g. OCR-extracted year 52026) cannot
+        # be converted by psycopg to Python's datetime.date (max 9999)
+        # and would raise "date too large" — failing the whole SELECT.
+        # The filter is a safety net; bad rows should also be cleaned
+        # via /api/admin/clean_bad_dates.
+        sql = """SELECT * FROM invoices
+                  WHERE (invoice_date IS NULL OR EXTRACT(YEAR FROM invoice_date) BETWEEN 1900 AND 2200)
+                    AND (due_date     IS NULL OR EXTRACT(YEAR FROM due_date)     BETWEEN 1900 AND 2200)
+                    AND (paid_at      IS NULL OR EXTRACT(YEAR FROM paid_at)      BETWEEN 1900 AND 2200)"""
         params: list = []
         clauses: list = []
 
@@ -130,7 +139,9 @@ class InvoiceStore:
                 clauses.append("invoice_date <= %s"); params.append(filters['date_to'])
 
         if clauses:
-            sql += " WHERE " + " AND ".join(clauses)
+            # The base SQL already has WHERE (date sanity filter) so we
+            # always extend with AND.
+            sql += " AND " + " AND ".join(clauses)
         sql += " ORDER BY created_at DESC"
         return [self._row(r) for r in db.query(sql, tuple(params))]
 

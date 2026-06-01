@@ -1009,6 +1009,84 @@ def api_admin_bootstrap():
     }), (200 if ok else 503)
 
 
+# Every date column we know about, table by table. The cleanup endpoint
+# walks this list and nulls any value with year < 1900 or > 2200 — those
+# are unrecoverable garbage (OCR mistakes, typos) that crash psycopg's
+# Python date conversion (max year 9999) and corrupt the whole SELECT.
+_DATE_COLUMNS = {
+    'invoices':           ['invoice_date', 'due_date', 'paid_at'],
+    'payments':           ['payment_date'],
+    'customer_invoices':  ['period_month', 'issue_date', 'due_date', 'sent_at', 'paid_at'],
+    'planned_expenses':   ['start_date', 'end_date', 'due_date'],
+    'employees':          ['start_date', 'end_date'],
+    'projects':           ['start_date', 'end_date'],
+    'project_assignments':['start_date', 'end_date'],
+    'dossiers':           ['start_date', 'end_date'],
+    'invoice_payments':   ['payment_date'],
+    'generated_jds':      [],     # only timestamps, no DATE columns
+}
+
+
+@app.route('/api/admin/scan_bad_dates', methods=['GET'])
+@login_required
+@admin_required
+def api_admin_scan_bad_dates():
+    """Identify rows with year < 1900 or > 2200 in any DATE column.
+
+    The dates are returned as TEXT (cast at SQL level) to avoid psycopg
+    choking on the same conversion that's breaking the dashboard.
+    """
+    findings = []
+    total = 0
+    for table, cols in _DATE_COLUMNS.items():
+        for col in cols:
+            try:
+                rows = db.query(
+                    f"""SELECT id, {col}::text AS bad_value
+                          FROM {table}
+                         WHERE {col} IS NOT NULL
+                           AND (EXTRACT(YEAR FROM {col}) < 1900
+                                OR EXTRACT(YEAR FROM {col}) > 2200)
+                         LIMIT 20""")
+                if rows:
+                    findings.append({
+                        'table':  table,
+                        'column': col,
+                        'count':  len(rows),
+                        'sample': [{'id': r['id'], 'value': r['bad_value']} for r in rows[:10]],
+                    })
+                    total += len(rows)
+            except Exception as e:
+                findings.append({'table': table, 'column': col, 'error': str(e)[:120]})
+    return jsonify({'total_bad_rows': total, 'findings': findings})
+
+
+@app.route('/api/admin/clean_bad_dates', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='admin.clean_bad_dates', entity='db_data')
+def api_admin_clean_bad_dates():
+    """One-shot fix: set every DATE column to NULL where its year is
+    outside [1900, 2200]. Returns per-column row-count of cleaned values."""
+    cleaned = []
+    total = 0
+    for table, cols in _DATE_COLUMNS.items():
+        for col in cols:
+            try:
+                n = db.execute(
+                    f"""UPDATE {table} SET {col} = NULL
+                         WHERE {col} IS NOT NULL
+                           AND (EXTRACT(YEAR FROM {col}) < 1900
+                                OR EXTRACT(YEAR FROM {col}) > 2200)""")
+                if n:
+                    cleaned.append({'table': table, 'column': col, 'rows_cleaned': int(n)})
+                    total += int(n)
+            except Exception as e:
+                cleaned.append({'table': table, 'column': col, 'error': str(e)[:120]})
+    logger.info('clean_bad_dates total=%d details=%s', total, cleaned)
+    return jsonify({'status': 'ok', 'total_cleaned': total, 'details': cleaned})
+
+
 @app.route('/api/admin/db_stats')
 @login_required
 @admin_required
