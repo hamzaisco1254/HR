@@ -189,14 +189,41 @@ os.makedirs(_UPLOAD_DIR, exist_ok=True)
 import db as _db_module
 from db_schema import bootstrap as _db_bootstrap
 
-if _db_module.is_configured():
+# Track bootstrap state so we can re-run on demand if a schema error
+# is detected later (a missing column on a column added in a recent PR).
+_BOOTSTRAP_STATE = {'ok': False, 'last_run': None, 'last_error': None}
+
+def _run_bootstrap():
+    from datetime import datetime as _dt
+    if not _db_module.is_configured():
+        _BOOTSTRAP_STATE['last_error'] = 'no_database_url'
+        return False
     try:
         _boot = _db_bootstrap()
+        _BOOTSTRAP_STATE['ok'] = True
+        _BOOTSTRAP_STATE['last_run'] = _dt.utcnow().isoformat()
+        _BOOTSTRAP_STATE['last_error'] = None
         logger.info('db_bootstrap result=%s', _boot)
-    except Exception:
+        return True
+    except Exception as _ex:
+        _BOOTSTRAP_STATE['last_error'] = str(_ex)
         logger.exception('db_bootstrap_failed')
+        return False
+
+if _db_module.is_configured():
+    _run_bootstrap()
 else:
     logger.warning('No DATABASE_URL / POSTGRES_URL set — DB features will fail.')
+
+
+def _is_schema_error(exc: Exception) -> bool:
+    """Detect Postgres errors that suggest a missing table or column —
+    typically because the bootstrap migration hasn't run yet."""
+    msg = (str(exc) or '').lower()
+    return ('does not exist' in msg
+            or 'column' in msg and 'not found' in msg
+            or 'undefined column' in msg
+            or 'undefined table' in msg)
 
 # ---------------------------------------------------------------------------
 # Singleton managers
@@ -925,6 +952,21 @@ def api_clear_history():
 # FINANCIAL DASHBOARD API (all protected)
 # ═══════════════════════════════════════════════════════════════════
 
+@app.route('/api/admin/bootstrap', methods=['POST'])
+@login_required
+@admin_required
+@audit(action='admin.bootstrap', entity='db_schema')
+def api_admin_bootstrap():
+    """Manually re-run the DB bootstrap (idempotent). Use this after a
+    deploy if the migration didn't apply automatically — e.g. after
+    introducing new columns/tables in a PR."""
+    ok = _run_bootstrap()
+    return jsonify({
+        'ok':           ok,
+        'state':        _BOOTSTRAP_STATE,
+    }), (200 if ok else 503)
+
+
 @app.route('/api/admin/db_stats')
 @login_required
 @admin_required
@@ -968,28 +1010,42 @@ def api_admin_db_stats():
 @app.route('/api/dashboard/kpi_dashboard')
 @login_required
 def api_dashboard_kpis_extended():
-    """Categorized KPI dashboard (PR-11) — supersedes the flat KPI grid."""
-    try:
-        result = compute_kpi_dashboard(
+    """Categorized KPI dashboard (PR-11) — supersedes the flat KPI grid.
+
+    Self-healing: if any computation fails with a schema error (missing
+    table/column from a recent PR), we re-run the bootstrap and retry
+    once before surfacing the error to the user.
+    """
+    def _compute():
+        return compute_kpi_dashboard(
             fx_rates, inv_store, bal_store, pay_store,
             income_store=income_store,
             planned_store=planned_store,
             statements_engine=statements_engine,
             forecast_engine=forecast_engine,
         )
-        # Guard against accidentally-huge payloads: serialize once and warn
-        # if we're approaching Vercel's 4.5 MB cap. KPI dashboard payloads
-        # should be ~10-30 KB; anything > 1 MB indicates something leaked.
-        try:
-            payload_size = len(json.dumps(result, default=str))
-            if payload_size > 1_000_000:
-                logger.warning('kpi_dashboard payload large: %d bytes', payload_size)
-        except Exception:
-            pass
-        return jsonify(result)
+    try:
+        result = _compute()
     except Exception as e:
-        logger.exception('kpi_dashboard_failed')
-        return jsonify({'error': str(e)}), 500
+        logger.exception('kpi_dashboard_first_attempt_failed')
+        if _is_schema_error(e):
+            logger.warning('kpi_dashboard schema error — running bootstrap and retrying')
+            _run_bootstrap()
+            try:
+                result = _compute()
+            except Exception as e2:
+                logger.exception('kpi_dashboard_retry_failed')
+                return jsonify({'error': f'{type(e2).__name__}: {e2}'}), 500
+        else:
+            return jsonify({'error': f'{type(e).__name__}: {e}'}), 500
+    # Guard against accidentally-huge payloads
+    try:
+        payload_size = len(json.dumps(result, default=str))
+        if payload_size > 1_000_000:
+            logger.warning('kpi_dashboard payload large: %d bytes', payload_size)
+    except Exception:
+        pass
+    return jsonify(result)
 
 
 @app.route('/api/dashboard/data')
@@ -997,7 +1053,29 @@ def api_dashboard_kpis_extended():
 def api_dashboard_data():
     """Rich dashboard payload — combines invoice/balance core with the new
     finance module (customer_invoices, planned_expenses, statements P&L,
-    forecast, risk alerts) for the redesigned Vue d'ensemble."""
+    forecast, risk alerts) for the redesigned Vue d'ensemble.
+
+    Self-healing: if a schema error is detected (a recent migration
+    didn't apply), the bootstrap is re-run automatically and the call
+    is retried once before surfacing the error to the user.
+    """
+    try:
+        return _build_dashboard_payload()
+    except Exception as e:
+        logger.exception('dashboard_data_first_attempt_failed')
+        if _is_schema_error(e):
+            logger.warning('dashboard schema error — running bootstrap and retrying')
+            _run_bootstrap()
+            try:
+                return _build_dashboard_payload()
+            except Exception as e2:
+                logger.exception('dashboard_data_retry_failed')
+                return jsonify({'error': f'{type(e2).__name__}: {e2}'}), 500
+        return jsonify({'error': f'{type(e).__name__}: {e}'}), 500
+
+
+def _build_dashboard_payload():
+    """The actual heavy work — extracted so the route can retry it."""
     today    = datetime.utcnow().date()
     year     = today.year
     try:

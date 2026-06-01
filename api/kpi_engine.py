@@ -367,15 +367,32 @@ def compute_kpi_dashboard(fx_rates, inv_store, bal_store, pay_store,
         except (TypeError, ValueError): return 0.0
         return fx_rates.to_tnd(a, cur or 'TND') if fx_rates else a
 
-    # ── Pull data ──────────────────────────────────────────────────
-    invoices = inv_store.get_all() if inv_store else []
-    accounts = bal_store.get_all() if bal_store else []
-    payments = pay_store.get_all() if pay_store else []
+    import logging as _logging
+    _log = _logging.getLogger('plw.kpi')
+
+    # ── Pull data (every fetch wrapped — partial failure is ok) ────
+    try:
+        invoices = inv_store.get_all() if inv_store else []
+    except Exception:
+        _log.exception('kpi_invoices_fetch_failed')
+        invoices = []
+    try:
+        accounts = bal_store.get_all() if bal_store else []
+    except Exception:
+        _log.exception('kpi_accounts_fetch_failed')
+        accounts = []
+    try:
+        payments = pay_store.get_all() if pay_store else []
+    except Exception:
+        _log.exception('kpi_payments_fetch_failed')
+        payments = []
 
     customer_invoices = []
     if income_store:
         try: customer_invoices = income_store.list({'year': year})
-        except Exception: customer_invoices = []
+        except Exception:
+            _log.exception('kpi_customer_invoices_fetch_failed')
+            customer_invoices = []
 
     pnl = None
     if statements_engine:
@@ -383,15 +400,20 @@ def compute_kpi_dashboard(fx_rates, inv_store, bal_store, pay_store,
             # lite=True so we don't build huge items[] arrays internally
             pnl = statements_engine.compute_pnl(fx_rates, year, month=None, lite=True)
         except Exception:
+            _log.exception('kpi_pnl_compute_failed')
             pnl = None
 
     risk_alerts = []
     forecast_cf = None
     if forecast_engine:
         try: risk_alerts = forecast_engine.compute_risk_alerts(fx_rates)
-        except Exception: risk_alerts = []
+        except Exception:
+            _log.exception('kpi_risk_compute_failed')
+            risk_alerts = []
         try: forecast_cf = forecast_engine.compute_cashflow_forecast(fx_rates, months_ahead=3)
-        except Exception: forecast_cf = None
+        except Exception:
+            _log.exception('kpi_forecast_compute_failed')
+            forecast_cf = None
 
     # ── Cash & liquidity primitives ────────────────────────────────
     paid_amt    = sum(_to_tnd(i.get('amount'), i.get('currency'))
@@ -448,22 +470,41 @@ def compute_kpi_dashboard(fx_rates, inv_store, bal_store, pay_store,
         except Exception: overdue_cust = []
     overdue_cust_amt = sum(float(c.get('amount_tnd') or 0) for c in overdue_cust)
 
-    # ── Workforce primitives ───────────────────────────────────────
+    # ── Workforce primitives (every query independent) ─────────────
+    headcount = depts = projects = 0
+    avg_cost_emp = 0
+    salary_sum = 0.0
+    emp_with_sal = 0
     try:
-        from db import query as _db_query
-        emp_rows = _db_query("SELECT COUNT(*) AS cnt, COALESCE(SUM(monthly_salary), 0) AS salary_sum FROM employees WHERE active = TRUE AND monthly_salary IS NOT NULL")
-        emp_total = _db_query("SELECT COUNT(*) AS cnt FROM employees WHERE active = TRUE")
-        dept_active = _db_query("SELECT COUNT(*) AS cnt FROM departments")
-        proj_active = _db_query("SELECT COUNT(*) AS cnt FROM projects WHERE status = 'active'")
-        headcount = int((emp_total[0]['cnt']) if emp_total else 0)
-        depts     = int((dept_active[0]['cnt']) if dept_active else 0)
-        projects  = int((proj_active[0]['cnt']) if proj_active else 0)
-        salary_sum = float((emp_rows[0]['salary_sum']) if emp_rows else 0)
-        emp_with_sal = int((emp_rows[0]['cnt']) if emp_rows else 0)
-        avg_cost_emp = (salary_sum / emp_with_sal) if emp_with_sal > 0 else 0
+        from db import query as _db_query, one as _db_one
+        # Each query in its own try so missing tables don't cascade
+        try:
+            r = _db_one("SELECT COUNT(*) AS cnt FROM employees WHERE active = TRUE")
+            headcount = int((r or {}).get('cnt') or 0)
+        except Exception:
+            _log.exception('kpi_headcount_query_failed')
+        try:
+            r = _db_one("SELECT COUNT(*) AS cnt FROM departments")
+            depts = int((r or {}).get('cnt') or 0)
+        except Exception:
+            _log.exception('kpi_depts_query_failed')
+        try:
+            r = _db_one("SELECT COUNT(*) AS cnt FROM projects WHERE status = 'active'")
+            projects = int((r or {}).get('cnt') or 0)
+        except Exception:
+            _log.exception('kpi_projects_query_failed')
+        try:
+            r = _db_one(
+                "SELECT COUNT(*) AS cnt, COALESCE(SUM(monthly_salary), 0) AS salary_sum "
+                "FROM employees WHERE active = TRUE AND monthly_salary IS NOT NULL"
+            )
+            salary_sum = float((r or {}).get('salary_sum') or 0)
+            emp_with_sal = int((r or {}).get('cnt') or 0)
+            avg_cost_emp = (salary_sum / emp_with_sal) if emp_with_sal > 0 else 0
+        except Exception:
+            _log.exception('kpi_salary_query_failed')
     except Exception:
-        headcount = depts = projects = 0
-        avg_cost_emp = 0
+        _log.exception('kpi_workforce_section_failed')
 
     revenue_per_emp = (revenue_expected / headcount) if headcount > 0 else 0
 
