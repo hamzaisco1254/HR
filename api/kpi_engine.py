@@ -379,8 +379,11 @@ def compute_kpi_dashboard(fx_rates, inv_store, bal_store, pay_store,
 
     pnl = None
     if statements_engine:
-        try: pnl = statements_engine.compute_pnl(fx_rates, year, month=None)
-        except Exception: pnl = None
+        try:
+            # lite=True so we don't build huge items[] arrays internally
+            pnl = statements_engine.compute_pnl(fx_rates, year, month=None, lite=True)
+        except Exception:
+            pnl = None
 
     risk_alerts = []
     forecast_cf = None

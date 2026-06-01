@@ -925,6 +925,46 @@ def api_clear_history():
 # FINANCIAL DASHBOARD API (all protected)
 # ═══════════════════════════════════════════════════════════════════
 
+@app.route('/api/admin/db_stats')
+@login_required
+@admin_required
+def api_admin_db_stats():
+    """Quick health dashboard: row counts per table + payload sizes.
+    Helps diagnose 'data too large' / slow endpoint issues."""
+    tables = [
+        'users', 'audit_log', 'invoices', 'payments', 'balances',
+        'persons', 'dossiers', 'dossier_docs',
+        'rag_documents', 'rag_chunks',
+        'doc_history', 'chat_messages', 'kv_settings',
+        'clients', 'departments', 'employees',
+        'projects', 'project_assignments', 'customer_invoices',
+        'planned_expenses', 'vendors', 'invoice_payments',
+        'generated_jds',
+    ]
+    stats = {}
+    for t in tables:
+        try:
+            row = db.one(f"SELECT COUNT(*) AS cnt FROM {t}")
+            stats[t] = int(row.get('cnt') or 0)
+        except Exception as e:
+            stats[t] = f'error: {str(e)[:80]}'
+    # Estimated payload size of key dashboard data
+    try:
+        invoices_count = stats.get('invoices', 0) or 0
+        customer_invoices_count = stats.get('customer_invoices', 0) or 0
+        # Rough estimate: 600 bytes per invoice in JSON
+        est_payload_kb = ((invoices_count + customer_invoices_count) * 600) // 1024
+    except Exception:
+        est_payload_kb = 0
+    return jsonify({
+        'tables':           stats,
+        'estimate_payload_kb': est_payload_kb,
+        'note': ("Si une table dépasse plusieurs milliers de lignes, "
+                 "le dashboard peut atteindre la limite Vercel de 4.5 MB. "
+                 "Utiliser le mode lite (déjà actif) ou paginer."),
+    })
+
+
 @app.route('/api/dashboard/kpi_dashboard')
 @login_required
 def api_dashboard_kpis_extended():
@@ -937,6 +977,15 @@ def api_dashboard_kpis_extended():
             statements_engine=statements_engine,
             forecast_engine=forecast_engine,
         )
+        # Guard against accidentally-huge payloads: serialize once and warn
+        # if we're approaching Vercel's 4.5 MB cap. KPI dashboard payloads
+        # should be ~10-30 KB; anything > 1 MB indicates something leaked.
+        try:
+            payload_size = len(json.dumps(result, default=str))
+            if payload_size > 1_000_000:
+                logger.warning('kpi_dashboard payload large: %d bytes', payload_size)
+        except Exception:
+            pass
         return jsonify(result)
     except Exception as e:
         logger.exception('kpi_dashboard_failed')
@@ -1036,7 +1085,10 @@ def api_dashboard_data():
     # ── YTD P&L derived figures via statements_engine ──────────────
     pnl_totals = {}
     try:
-        pnl = statements_engine.compute_pnl(fx_rates, year, month=None)
+        # lite=True: skip per-invoice items[] arrays — we only need totals.
+        # Without this, the response can blow past Vercel's 4.5MB payload
+        # cap when the DB has hundreds of invoices.
+        pnl = statements_engine.compute_pnl(fx_rates, year, month=None, lite=True)
         pnl_totals = {
             'revenue':            pnl['revenue'],
             'charges_externes':   pnl['totals']['charges_externes'],
@@ -1059,15 +1111,17 @@ def api_dashboard_data():
     net_margin_pct    = (net_result_ytd / revenue_ytd * 100) if revenue_ytd > 0 else None
 
     # ── Top suppliers, top clients, expense by category ────────────
-    # Top suppliers (existing kpi_engine helper)
-    supplier_totals_dict = inv_store.total_by_supplier()
-    supplier_totals_tnd  = {}
-    # Re-aggregate in TND for accuracy
+    # Re-aggregate in TND for accuracy, then cap to top 20 to keep
+    # the response well under Vercel's 4.5 MB payload limit even when
+    # the DB has hundreds of distinct suppliers.
     by_supplier_tnd: dict = {}
     for i in invoices:
         name = i.get('supplier_name') or 'Inconnu'
         by_supplier_tnd[name] = by_supplier_tnd.get(name, 0.0) + _to_tnd(i.get('amount'), i.get('currency'))
-    top_suppliers = sorted(by_supplier_tnd.items(), key=lambda x: x[1], reverse=True)[:7]
+    # Cap the supplier_totals_dict that the legacy chart consumes
+    sorted_suppliers = sorted(by_supplier_tnd.items(), key=lambda x: x[1], reverse=True)
+    supplier_totals_dict = dict(sorted_suppliers[:20])
+    top_suppliers = sorted_suppliers[:7]
 
     # Top clients (NEW)
     by_client_tnd: dict = {}

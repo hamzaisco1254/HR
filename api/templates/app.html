@@ -2870,10 +2870,21 @@ function _ovSecTile(label, value, sub, color, bg){
 }
 
 async function loadDashboard(){
-  let d;
-  try{ d = await api('/api/dashboard/data'); }
-  catch(e){ toast('Erreur dashboard: '+e,'error'); return; }
-  const ov = d.overview || {};
+  const d = await api('/api/dashboard/data');
+  // The new api() helper returns {error: '...'} on any HTTP/parsing failure
+  // instead of throwing. Surface the error clearly + still render skeleton.
+  if(d && d.error){
+    toast('Erreur dashboard : ' + d.error, 'error', 8000);
+    // Render minimal empty state so the page isn't blank
+    document.getElementById('ov-hero').innerHTML =
+      `<div style="grid-column:1/-1;background:#fef3c7;color:#92400e;padding:18px 22px;border-radius:var(--radius);border:1px solid #fbbf24;">
+        <strong>Impossible de charger les indicateurs.</strong>
+        <div style="font-size:11px;margin-top:6px;">${escHtml(d.error)}</div>
+        <div style="font-size:11px;margin-top:6px;opacity:.85;">Vérifiez les logs Vercel. Onglet <em>Administration</em> → endpoint <code>/api/admin/db_stats</code> pour diagnostiquer la taille des tables.</div>
+      </div>`;
+    return;
+  }
+  const ov = (d && d.overview) || {};
   if(ov.year) document.getElementById('ov-year').textContent = ov.year;
 
   // ── AI insight
@@ -3221,10 +3232,18 @@ const KPI_TREND_ICONS = {
 };
 
 async function loadKPIs(){
-  let d;
-  try{ d = await api('/api/dashboard/kpi_dashboard'); }
-  catch(e){ toast('Erreur KPIs: '+e,'error'); return; }
-  if(d.error){toast(d.error,'error');return;}
+  const d = await api('/api/dashboard/kpi_dashboard');
+  if(d && d.error){
+    toast('Erreur KPIs : ' + d.error, 'error', 8000);
+    document.getElementById('kpi-hero').innerHTML =
+      `<div style="background:#fef3c7;color:#92400e;padding:18px 22px;border-radius:var(--radius);border:1px solid #fbbf24;width:100%;">
+        <strong>Impossible de charger les KPI.</strong>
+        <div style="font-size:11px;margin-top:6px;">${escHtml(d.error)}</div>
+        <div style="font-size:11px;margin-top:6px;opacity:.85;">Si l'erreur mentionne une taille (FUNCTION_PAYLOAD_TOO_LARGE), c'est que la réponse dépasse 4.5 MB. Le mode lite est désormais activé — réessayez après le redéploiement.</div>
+      </div>`;
+    document.getElementById('kpi-categories').innerHTML = '';
+    return;
+  }
 
   document.getElementById('kpi-year').textContent = d.year || '—';
 

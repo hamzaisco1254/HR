@@ -124,8 +124,13 @@ def _period_bounds(year: int, month: Optional[int]) -> tuple:
 
 
 def compute_pnl(fx_rates, year: int, month: Optional[int] = None, basis: str = 'accrual',
-                include_planned: bool = True) -> Dict:
+                include_planned: bool = True, lite: bool = False) -> Dict:
     """French-style P&L for the period.
+
+    When ``lite=True``, the per-bucket items[] arrays are NOT populated —
+    only the aggregate totals are returned. Use this from dashboards
+    and KPI computations to avoid hauling around megabytes of invoice
+    detail unnecessarily.
 
     basis='accrual': revenue = sum of customer_invoices.amount_tnd
     basis='cash':    revenue = sum of customer_invoices.received_tnd
@@ -199,24 +204,26 @@ def compute_pnl(fx_rates, year: int, month: Optional[int] = None, basis: str = '
         else:
             amt = _norm(inv.get('amount'), fx_rates, inv.get('currency') or 'TND')
         buckets[bucket]['amount'] += amt
-        buckets[bucket]['items'].append({
-            'category': cat or 'autre',
-            'amount_tnd': amt,
-            'supplier_name': inv.get('supplier_name') or '',
-            'invoice_date': str(inv.get('invoice_date') or ''),
-            'source': 'invoice',
-        })
+        if not lite:
+            buckets[bucket]['items'].append({
+                'category': cat or 'autre',
+                'amount_tnd': amt,
+                'supplier_name': inv.get('supplier_name') or '',
+                'invoice_date': str(inv.get('invoice_date') or ''),
+                'source': 'invoice',
+            })
 
     # Add salary aggregate to charges_personnel
     if salary_est_tnd > 0:
         buckets['charges_personnel']['amount'] += salary_est_tnd
-        buckets['charges_personnel']['items'].append({
-            'category': 'salaires_estimes',
-            'amount_tnd': salary_est_tnd,
-            'supplier_name': f'Salaires bruts (estimes, {months_covered} mois)',
-            'invoice_date': '',
-            'source': 'salary_estimate',
-        })
+        if not lite:
+            buckets['charges_personnel']['items'].append({
+                'category': 'salaires_estimes',
+                'amount_tnd': salary_est_tnd,
+                'supplier_name': f'Salaires bruts (estimes, {months_covered} mois)',
+                'invoice_date': '',
+                'source': 'salary_estimate',
+            })
 
     # ─── Planned expenses (uninvoiced commitments) ──────────────
     planned_total = 0.0
@@ -229,13 +236,14 @@ def compute_pnl(fx_rates, year: int, month: Optional[int] = None, basis: str = '
             bucket = _CATEGORY_BUCKETS.get(cat, 'charges_externes')
             amt    = float(occ.get('amount_tnd') or 0)
             buckets[bucket]['amount'] += amt
-            buckets[bucket]['items'].append({
-                'category': cat,
-                'amount_tnd': amt,
-                'supplier_name': occ.get('name') or 'Depense prevue',
-                'invoice_date': occ.get('occurrence_date') or '',
-                'source': 'planned',
-            })
+            if not lite:
+                buckets[bucket]['items'].append({
+                    'category': cat,
+                    'amount_tnd': amt,
+                    'supplier_name': occ.get('name') or 'Depense prevue',
+                    'invoice_date': occ.get('occurrence_date') or '',
+                    'source': 'planned',
+                })
             planned_total += amt
             planned_by_cat[cat] = planned_by_cat.get(cat, 0.0) + amt
 
@@ -250,13 +258,14 @@ def compute_pnl(fx_rates, year: int, month: Optional[int] = None, basis: str = '
     cnss_employer = max(0.0, personnel_for_cnss * cnss_rate)
     if cnss_employer > 0:
         buckets['charges_personnel']['amount'] += cnss_employer
-        buckets['charges_personnel']['items'].append({
-            'category': 'cnss_employer',
-            'amount_tnd': cnss_employer,
-            'supplier_name': f'Cotisations CNSS employeur ({rates.get("cnss_employer_rate", 0):.2f}%)',
-            'invoice_date': '',
-            'source': 'cnss_provision',
-        })
+        if not lite:
+            buckets['charges_personnel']['items'].append({
+                'category': 'cnss_employer',
+                'amount_tnd': cnss_employer,
+                'supplier_name': f'Cotisations CNSS employeur ({rates.get("cnss_employer_rate", 0):.2f}%)',
+                'invoice_date': '',
+                'source': 'cnss_provision',
+            })
 
     charges_externes      = buckets['charges_externes']['amount']
     charges_personnel     = buckets['charges_personnel']['amount']
