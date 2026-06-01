@@ -3310,10 +3310,24 @@ async function loadKPIs(){
 function saveRates(){post('/api/finance/exchange_rate',{eur_to_tnd:parseFloat(document.getElementById('rate-eur-tnd').value)||3.35,tnd_to_eur:parseFloat(document.getElementById('rate-tnd-eur').value)||0.2985}).then(()=>toast('Taux sauvegardes','success'));}
 
 /* ── Admin: Users ────────────────────────────────────────── */
+let _currentUserId = null;
 async function loadUsers(){
   await loadSmtpStatus();
   try{
+    // Fetch the current user once so we know which row is "self"
+    if(_currentUserId === null){
+      try{ const me = await api('/api/auth/me'); _currentUserId = me.user?.id || ''; }
+      catch(e){ _currentUserId = ''; }
+    }
     const d = await api('/api/auth/users');
+    if(d && d.error){
+      document.getElementById('users-list').innerHTML =
+        `<div style="background:#fee2e2;color:#991b1b;padding:14px;border-radius:var(--radius);">${escHtml(d.error)}</div>`;
+      return;
+    }
+    // Count active admins so we can disable the destructive buttons
+    // on the LAST active admin (matches the server-side check).
+    const activeAdmins = (d.users||[]).filter(u => u.role === 'admin' && u.active).length;
     document.getElementById('user-count-badge').textContent = `${d.users.length} / ${d.max}`;
     const el = document.getElementById('users-list');
     el.innerHTML = d.users.map(u=>{
@@ -3322,21 +3336,36 @@ async function loadUsers(){
       const forceBadge = u.force_password_reset
         ? `<span class="user-badge" style="background:#fef3c7;color:#92400e;font-size:9px;padding:3px 8px;border-radius:8px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;" title="L'utilisateur doit changer son mot de passe a la prochaine connexion">MDP temporaire</span>`
         : '';
+      const isSelf = (u.id === _currentUserId);
+      const isLastActiveAdmin = (u.role === 'admin' && u.active && activeAdmins <= 1);
+      const blockReason = isSelf
+        ? 'Compte actuel — impossible'
+        : (isLastActiveAdmin ? 'Dernier admin actif — promouvez quelqu\'un d\'autre d\'abord' : '');
+
+      let actions = '';
+      if(isSelf){
+        actions = `<span class="user-badge" style="background:#dbeafe;color:#1e40af;font-size:9px;padding:3px 8px;border-radius:8px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;">Vous</span>`;
+      } else {
+        const toggleDisabled = (u.active && isLastActiveAdmin) ? 'disabled' : '';
+        const deleteDisabled = isLastActiveAdmin ? 'disabled' : '';
+        const disabledTitle = blockReason ? `title="${escHtml(blockReason)}"` : '';
+        actions = `
+          <button class="btn btn-outline btn-sm" onclick="resendCredentials('${u.id}','${escHtml(u.email)}')">Renvoyer MDP</button>
+          <button class="btn btn-outline btn-sm" ${toggleDisabled} ${disabledTitle} onclick="toggleUser('${u.id}')">${u.active?'Désactiver':'Activer'}</button>
+          <button class="btn btn-danger btn-sm" ${deleteDisabled} ${disabledTitle} onclick="removeUser('${u.id}','${escHtml(u.email)}','${u.role}')">Supprimer</button>
+        `;
+      }
       return `<div class="user-row">
         <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--pink),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;flex-shrink:0;">${escHtml(initial)}</div>
         <div class="user-info">
           <strong>${escHtml(u.name)}</strong>
           <div class="email">${escHtml(u.email)}</div>
-          ${credSentDate?`<div style="font-size:10px;color:var(--muted);margin-top:2px;">Identifiants envoyes le ${credSentDate}</div>`:''}
+          ${credSentDate?`<div style="font-size:10px;color:var(--muted);margin-top:2px;">Identifiants envoyés le ${credSentDate}</div>`:''}
         </div>
         <span class="user-badge ${u.role}">${u.role}</span>
         <span class="user-badge ${u.active?'active':'inactive'}">${u.active?'Actif':'Inactif'}</span>
         ${forceBadge}
-        ${u.role!=='admin'?`
-          <button class="btn btn-outline btn-sm" onclick="resendCredentials('${u.id}','${escHtml(u.email)}')">Renvoyer MDP</button>
-          <button class="btn btn-outline btn-sm" onclick="toggleUser('${u.id}')">${u.active?'Desactiver':'Activer'}</button>
-          <button class="btn btn-danger btn-sm" onclick="removeUser('${u.id}')">Supprimer</button>
-        `:''}
+        ${actions}
       </div>`;
     }).join('');
   }catch(e){}
@@ -3442,8 +3471,25 @@ function showPasswordOnce(password, email, warning){
   document.body.insertAdjacentHTML('beforeend', html);
 }
 
-function removeUser(id){if(!confirm('Supprimer cet utilisateur?'))return;post('/api/auth/remove_user',{id}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Supprime','success');loadUsers();});}
-function toggleUser(id){post('/api/auth/toggle_user',{id}).then(d=>{if(d.error){toast(d.error,'error');return;}toast('Mis a jour','success');loadUsers();});}
+function removeUser(id, email, role){
+  const isAdmin = role === 'admin';
+  const prompt = isAdmin
+    ? `Supprimer l'ADMINISTRATEUR « ${email} » ?\n\nCette personne perdra immédiatement tout accès à la plateforme.\nCette action est irréversible.`
+    : `Supprimer l'utilisateur « ${email||id} » ?`;
+  if(!confirm(prompt)) return;
+  post('/api/auth/remove_user',{id}).then(d=>{
+    if(d.error){toast(d.error,'error',8000);return;}
+    toast('Utilisateur supprimé','success');
+    loadUsers();
+  });
+}
+function toggleUser(id){
+  post('/api/auth/toggle_user',{id}).then(d=>{
+    if(d.error){toast(d.error,'error',8000);return;}
+    toast('Mis à jour','success');
+    loadUsers();
+  });
+}
 
 /* ── Force-password-change flow (first login) ──────────────────── */
 async function checkForcePasswordChange(){

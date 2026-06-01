@@ -625,13 +625,45 @@ def api_auth_resend_credentials():
     return jsonify(response)
 
 
+def _check_admin_safety(target_user_id: str, action: str):
+    """Validate that the current admin can perform the destructive
+    action on the target user without locking the system out.
+
+    Rules (raise jsonified Response on violation, None when ok):
+      1. You can never act on your own account.
+      2. If the target is an admin and is currently active, you may not
+         delete or deactivate them if they are the only active admin.
+
+    Returns: (error_response, status_code) or (None, None) when the action is allowed.
+    """
+    if not target_user_id:
+        return jsonify({'error': 'ID utilisateur requis.'}), 400
+    if target_user_id == session.get('user_id'):
+        return jsonify({'error': 'Vous ne pouvez pas agir sur votre propre compte.'}), 400
+    target = user_store.get_user_by_id(target_user_id)
+    if not target:
+        return jsonify({'error': 'Utilisateur introuvable.'}), 404
+    # Only block the last-active-admin case
+    target_is_active_admin = (target.get('role') == 'admin' and target.get('active'))
+    if target_is_active_admin and user_store.count_active_admins() <= 1:
+        return jsonify({
+            'error': "Impossible de " + ('supprimer' if action == 'delete' else 'désactiver')
+                     + " le dernier administrateur actif. Promouvez un autre utilisateur en admin d'abord."
+        }), 400
+    return None, None
+
+
 @app.route('/api/auth/remove_user', methods=['POST'])
 @admin_required
 @audit(action='user.delete', entity='user', entity_arg='id')
 def api_auth_remove_user():
-    data = request.get_json(force=True)
+    data = request.get_json(force=True) or {}
+    uid = (data.get('id') or '').strip()
+    err, code = _check_admin_safety(uid, 'delete')
+    if err is not None:
+        return err, code
     try:
-        if user_store.remove_user(data.get('id', '')):
+        if user_store.remove_user(uid):
             return jsonify({'status': 'ok'})
         return jsonify({'error': 'Utilisateur non trouvé'}), 404
     except ValueError as e:
@@ -642,9 +674,18 @@ def api_auth_remove_user():
 @admin_required
 @audit(action='user.toggle', entity='user', entity_arg='id')
 def api_auth_toggle_user():
-    data = request.get_json(force=True)
+    data = request.get_json(force=True) or {}
+    uid = (data.get('id') or '').strip()
+    # Same self + last-active-admin guard, but only when we're DEACTIVATING.
+    target = user_store.get_user_by_id(uid)
+    if uid == session.get('user_id'):
+        return jsonify({'error': 'Vous ne pouvez pas désactiver votre propre compte.'}), 400
+    if target and target.get('active'):  # we're about to deactivate
+        err, code = _check_admin_safety(uid, 'deactivate')
+        if err is not None:
+            return err, code
     try:
-        result = user_store.toggle_user(data.get('id', ''))
+        result = user_store.toggle_user(uid)
         if result:
             return jsonify({'status': 'ok', 'user': result})
         return jsonify({'error': 'Utilisateur non trouvé'}), 404

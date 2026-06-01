@@ -209,20 +209,30 @@ class UserStore:
             (datetime.utcnow(), user_id),
         )
 
+    def count_active_admins(self) -> int:
+        """Return the number of admin users currently active. Used as the
+        last line of defense before deleting / deactivating an admin —
+        the system must always have at least one active admin."""
+        row = db.one(
+            "SELECT COUNT(*) AS cnt FROM users WHERE role = 'admin' AND active = TRUE"
+        )
+        return int((row or {}).get('cnt') or 0)
+
     def remove_user(self, user_id: str) -> bool:
-        row = db.one("SELECT role FROM users WHERE id = %s", (user_id,))
+        """Delete a user. Admin deletion is now allowed (callers must
+        check 'last admin' + 'self' policies at the route layer first)."""
+        row = db.one("SELECT id FROM users WHERE id = %s", (user_id,))
         if not row:
             return False
-        if row['role'] == 'admin':
-            raise ValueError("Impossible de supprimer le compte administrateur.")
         return db.execute("DELETE FROM users WHERE id = %s", (user_id,)) > 0
 
     def toggle_user(self, user_id: str) -> Optional[Dict]:
-        row = db.one("SELECT role, active FROM users WHERE id = %s", (user_id,))
+        """Flip the active flag of a user. Admin toggle is allowed
+        (callers must check 'last active admin' + 'self' policies at
+        the route layer)."""
+        row = db.one("SELECT active FROM users WHERE id = %s", (user_id,))
         if not row:
             return None
-        if row['role'] == 'admin':
-            raise ValueError("Impossible de désactiver le compte administrateur.")
         new_active = not row['active']
         db.execute("UPDATE users SET active = %s WHERE id = %s", (new_active, user_id))
         return self.get_user_by_id(user_id)
