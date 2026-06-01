@@ -509,15 +509,54 @@ CREATE INDEX IF NOT EXISTS gen_jds_created_idx ON generated_jds (created_at DESC
 
 def bootstrap() -> dict:
     """Create schema (idempotent) and seed admin user from env vars.
+    Also runs a defensive cleanup of bad date values that would
+    otherwise crash psycopg's date conversion.
 
     Returns a dict with a short summary so callers can log / display it.
     """
-    summary = {'tables_ensured': False, 'admin_seeded': False}
+    summary = {'tables_ensured': False, 'admin_seeded': False, 'bad_dates_cleaned': 0}
 
     # 1) Run all DDL statements
     with db.transaction() as cur:
         cur.execute(SCHEMA_SQL)
     summary['tables_ensured'] = True
+
+    # 1bis) One-shot data cleanup: NULL any DATE column whose year is
+    # outside [1900, 2200]. Such values (typically OCR/typing mistakes
+    # like year 52026 instead of 2026) cannot be converted by psycopg
+    # to Python's datetime.date and crash the entire SELECT they appear
+    # in. The cleanup is idempotent — re-running it is a no-op.
+    _date_columns = [
+        ('invoices',            ['invoice_date', 'due_date', 'paid_at']),
+        ('payments',            ['payment_date']),
+        ('customer_invoices',   ['period_month', 'issue_date', 'due_date', 'sent_at', 'paid_at']),
+        ('planned_expenses',    ['start_date', 'end_date', 'due_date']),
+        ('employees',           ['start_date', 'end_date']),
+        ('projects',            ['start_date', 'end_date']),
+        ('project_assignments', ['start_date', 'end_date']),
+        ('dossiers',            ['start_date', 'end_date']),
+        ('invoice_payments',    ['payment_date']),
+    ]
+    total_cleaned = 0
+    for tbl, cols in _date_columns:
+        for col in cols:
+            try:
+                n = db.execute(
+                    f"""UPDATE {tbl} SET {col} = NULL
+                         WHERE {col} IS NOT NULL
+                           AND (EXTRACT(YEAR FROM {col}) < 1900
+                                OR EXTRACT(YEAR FROM {col}) > 2200)"""
+                )
+                if n:
+                    total_cleaned += int(n)
+                    print(f'[BOOTSTRAP] cleaned {n} bad date(s) in {tbl}.{col}')
+            except Exception as _ex:
+                # Table or column might not exist yet on a fresh DB;
+                # the DDL above will have created them, but a partial
+                # bootstrap could still hit this. Don't fail the whole
+                # bootstrap on cleanup errors.
+                print(f'[BOOTSTRAP] cleanup skipped for {tbl}.{col}: {_ex}')
+    summary['bad_dates_cleaned'] = total_cleaned
 
     # 2) Ensure at least one admin user
     existing = db.one("SELECT id FROM users WHERE role = 'admin' LIMIT 1")
